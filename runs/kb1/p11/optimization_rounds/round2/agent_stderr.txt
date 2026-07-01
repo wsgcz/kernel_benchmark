@@ -1,0 +1,3730 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efd91-871f-7862-83d5-b0deb2090483
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+  
+MFMA swizzle invariants:
+  For A, `i in [0,32)`, `j in [0,8)`: `A(i, j) -> (lane_id = i + (j / 4) * 32, element = j % 4)`
+  For B, `j in [0,8)`, `i in [0,32)`: `B(j, i) -> (lane_id = j + (i / 4) * 32, element = i % 4)`
+
+Accumulator invariant for C: for each lane in [0, 64) and acc_idx in [0, 16):
+  - col = tile_col_base + (lane % 32)
+  - row = tile_row_base + 8 * (acc_idx // 4) + 4 * (lane // 32) + (acc_idx % 4)
+
+Do not invent a different unpacking. Do not use a naive acc_idx -> contiguous row mapping. Treat this mapping as fixed when writing results.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel and the nearest local MFMA example first, then I’ll move directly into editing `output_model_new.py` and validate with the provided round-local command.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+BATCH = 8
+I = 256
+J = 512
+L = 256
+K = 768
+M_TOTAL = BATCH * I * J
+
+WAVE_SIZE = 64
+WAVES_M = 2
+WAVES_N = 2
+BLOCK_M = WAVES_M * 32
+BLOCK_N = WAVES_N * 32
+BLOCK_K = 16
+THREADS = WAVE_SIZE * WAVES_M * WAVES_N
+
+
+@substrate.jit
+def einsum4d_mfma_kernel(
+    A: S.Tensor((M_TOTAL, L), S.bf16),
+    BT: S.Tensor((K, L), S.bf16),
+    C: S.Tensor((M_TOTAL, K), S.bf16),
+    a_range_bytes: S.i32,
+    bt_range_bytes: S.i32,
+):
+    tid = S.thread_id(0)
+    wave_id = tid >> 6
+    lane = tid % WAVE_SIZE
+    lane_group = lane >> 5
+    lane_inner = lane % 32
+
+    wave_row = wave_id >> 1
+    wave_col = wave_id & 1
+
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+    wave_row_base = block_row + wave_row * 32
+    wave_col_base = block_col + wave_col * 32
+
+    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+    bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+
+    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+
+    acc = S.full((16,), 0.0, S.f32)
+    zero = S.convert(0, S.i32)
+
+    for k_base in S.range(0, L, BLOCK_K):
+        a_row = wave_row_base + lane_inner
+        a_k = k_base + lane_group * 8
+        a_elem_offset = a_row * L + a_k
+        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
+
+        if lane_group == 0:
+            a_shared[wave_id, lane, 0] = a_pack[0]
+            a_shared[wave_id, lane, 1] = a_pack[1]
+            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+        else:
+            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+            a_shared[wave_id, lane, 2] = a_pack[2]
+            a_shared[wave_id, lane, 3] = a_pack[3]
+
+        b_col = wave_col_base + lane_inner
+        b_k = k_base + lane_group * 8
+        b_elem_offset = b_col * L + b_k
+        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
+
+        if lane_group == 0:
+            b_shared[wave_id, lane, 0] = b_pack[0]
+            b_shared[wave_id, lane, 1] = b_pack[1]
+            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+        else:
+            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+            b_shared[wave_id, lane, 2] = b_pack[2]
+            b_shared[wave_id, lane, 3] = b_pack[3]
+
+        S.syncthreads()
+
+        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+
+        S.syncthreads()
+
+    for acc_idx in S.range(16):
+        out_col = wave_col_base + lane_inner
+        out_row = wave_row_base + 8 * (acc_idx // 4) + 4 * lane_group + (acc_idx % 4)
+        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._bt_cache_key = None
+        self._bt_cache = None
+
+    def forward(self, A, B):
+        if tuple(A.shape) != (BATCH, I, J, L) or tuple(B.shape) != (L, K):
+            raise ValueError("ModelNew only supports the benchmark input shapes.")
+
+        A = A.contiguous().view(M_TOTAL, L)
+        cache_key = (B.data_ptr(), B.stride(), B.dtype, B.device)
+        if self._bt_cache_key != cache_key:
+            self._bt_cache = B.transpose(0, 1).contiguous()
+            self._bt_cache_key = cache_key
+        BT = self._bt_cache
+        C = torch.empty((M_TOTAL, K), device=A.device, dtype=A.dtype)
+
+        a_range_bytes = A.numel() * A.element_size()
+        bt_range_bytes = BT.numel() * BT.element_size()
+
+        grid = ((K + BLOCK_N - 1) // BLOCK_N, (M_TOTAL + BLOCK_M - 1) // BLOCK_M, 1)
+        block = (THREADS, 1, 1)
+        einsum4d_mfma_kernel[lambda: (grid, block)](
+            A,
+            BT,
+            C,
+            a_range_bytes,
+            bt_range_bytes,
+        )
+        return C.view(BATCH, I, J, K)
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+I have the starting kernel and the local MFMA reference. I’m editing `output_model_new.py` now to convert the single-stage loop into a double-buffered, K-unrolled pipeline while keeping the existing 2x2-wave MFMA/output mapping intact.
+codex
+The edit is a focused rewrite of the K loop and LDS layout: two buffers, two 8-wide MFMA steps per 16-byte fragment, and a pairwise schedule that refills one buffer while the other tile is still being consumed. After that I’ll run the round-local evaluation command exactly as provided.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..15b135131cea61e13d1f32c7701a1b3ec2a0ae29
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..15b135131cea61e13d1f32c7701a1b3ec2a0ae29
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+The first executable version is in place. I’m running the exact round-local evaluation command now; if it fails, I’ll fix only the concrete error it reports.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..15b135131cea61e13d1f32c7701a1b3ec2a0ae29
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+The evaluation is still running. I’m waiting for the concrete compile/runtime result before deciding whether this needs a targeted fix or is ready as-is.
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..15b135131cea61e13d1f32c7701a1b3ec2a0ae29
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+ exited 1 in 4176ms:
+/tmp/tmp2lo8gji1.py:154:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  154 |                 a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
+      |                 ^
+/tmp/tmp2lo8gji1.py:155:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  155 |                 a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
+      |                 ^
+/tmp/tmp2lo8gji1.py:156:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  156 |                 a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
+      |                 ^
+/tmp/tmp2lo8gji1.py:157:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  157 |                 a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
+      |                 ^
+/tmp/tmp2lo8gji1.py:158:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  158 |                 b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
+      |                 ^
+/tmp/tmp2lo8gji1.py:159:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  159 |                 b_shared[0, wave_next_b_Unimplemented: 'Failed to generate expression for assignment'
+  d, lane = nex]
+      |                 ^
+/tmp/tmp2lo8gji1.py:161:17:wave_ide + 32ext_b_pack0[3]:163:17:  163 |           a_s0, wave_id, lane , 1, 0] =_pack0[0]
+      |                 ^
+/tmp/tmp2lo8gji1.py:164:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  164 |                 a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
+      |                 ^
+/tmp/tmp2lo8gji1.py:165:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  165 |                 a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
+      |                 ^
+/tmp/tmp2lo8gji1.py:166:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  166 |                 a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
+      |                 ^
+/tmp/tmp2lo8gji1.py:167:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  167 |                 b_shared[0, wave_id, lane - 32, 1, 0] = 0[0]
+      |                 ^
+/tmp/tmp2lo8gji1.py:168:168 |        b_shared, lane - next_b_pac17: error: Unimplemented: 'Failed to generate expression for assignment'
+  169 |         _shared[0, wave_id, lane, 0, 0] k0[2]
+      |                 ^
+/tmp/tmp2lo8gji1.py:170:17: error: Unimplemented: 'Failed to generate expression for assignment'
+ b_shared[0, wave_id, lane= nex[3]
+      |                 ^
+/tmp/tmp2lo8gji1.py:195:17: error: Unimplemented: 'Failed to generate expression for assignment'
+ a_shared, lane, 0, 0] = next_a_pack1[0]
+      |                 ^
+/tmp/tmp2lo8gji1.py:196:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  196 |            pack1[1]
+      |                 ^
+/tmp/tmp2lo8gji1.py:197:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  197 |                 a_shared[1, wave_id, lane +ext_a_pack                ^
+/tmp/tmp2lo8gji1.py:198:17: shared[1, wave_id, 1] = next_a_pack1[3]
+      |                 ^
+/tmp/tmp2lo8gji1.py:_shared[
+/tmp/tmp2lo8gji1.py:200:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  , 0, 1]
+  201 |    b_sharedlane + 32, 1, 0] = ne17: error: Unimplemented: 'Failed to generate expression for assignment'
+  202  204 |     e /tmp/tmp2lo8gji1.py205 |     1, wave_id, lanck1[|                 ^
+Unimplemented: 'Failed to generate expression for assignment'
+      lane,next_a_pack1[2]
+      |                 ^
+/tmp/tmp2lo8gji1.py:207:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  a lanenext_a_pack1[3       red[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
+      |                 ^
+/tmp/tmp2lo8gji1.py:209:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  209 |                 b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
+      |                 ^
+/tmp/tmp2lo8gji1.py:210:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  210 |                 b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
+      |                 ^
+/tmp/tmp2lo8gji1.py:211:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  211 |                 b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+      |                 ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+codex
+The failure is a Substrate codegen limitation around assignments guarded by the dynamic `S.range` loop state. I’m switching the pipelined loop to a static Python-unrolled pair loop, which keeps the same schedule but removes that unsupported path.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..454cd3dfdcbd80a809ffa3249509c7f6a0654ff8
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..454cd3dfdcbd80a809ffa3249509c7f6a0654ff8
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..454cd3dfdcbd80a809ffa3249509c7f6a0654ff8
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+The kernel is back under evaluation with the static-unrolled pipeline. I’m waiting on the actual compile/runtime result before making any further change.
+ exited 1 in 4188ms:
+/tmp/tmp28dqub_3.py:130:24: error: Symbol not found: 'range'
+  130 |     for k_pair_base in range(0, L, 2 * BLOCK_K):
+      |                        ^
+/tmp/tmp28dqub_3.py:130:24: error: Symbol not found: 'range'
+/tmp/tmp28dqub_3.py:130:5: error: Unimplemented: 'Failed to generate iterator expression for for loop'
+  130 |     for k_pair_base in range(0, L, 2 * BLOCK_K):
+      |     ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..454cd3dfdcbd80a809ffa3249509c7f6a0654ff8
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,171 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
+ 
+-        if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
+-        else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
+ 
+-        if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
+-        else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
+ 
+-        S.syncthreads()
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
+-        S.syncthreads()
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in range(0, L, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_a_elem_offset0 = a_row * L + next_a_k0
++            next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++            )
++
++            next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++            next_b_elem_offset0 = b_col * L + next_b_k0
++            next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++            )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
++        if k_pair_base + 2 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
++            else:
++                a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++                a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++                a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++                a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++                b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++                b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++                b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++                b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
++
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_a_elem_offset1 = a_row * L + next_a_k1
++            next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++                a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++            )
++
++            next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++            next_b_elem_offset1 = b_col * L + next_b_k1
++            next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++                bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++            )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
++        if k_pair_base + 3 * BLOCK_K < L:
++            if lane_group == 0:
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
++            else:
++                a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++                a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++                a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++                a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++                b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++                b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++                b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++                b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
++
++            S.syncthreads()
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+The `range` failure confirms the kernel body only accepts `S.range`. I’m restructuring the pipeline as a steady-state `S.range` over all but the last pair, then a final epilogue pair with no guarded LDS refills. That avoids the unsupported conditional shared writes without changing the schedule.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+The steady-state/epilogue rewrite compiled far enough to launch evaluation again. I’m waiting on the result; if there is another failure, it should now be a more specific correctness or runtime issue rather than the earlier control-flow codegen problem.
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+ succeeded in 12689ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+The evaluation command completed successfully. I’m checking the round-local `debug_eval.jsonl` for the recorded result so I can confirm the pass status and stop without extra iteration.
+exec
+/bin/bash -lc "sed -n '1,120p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782370858.167297, "run_ended_at": 1782370868.628895, "run_wall_time_s": 10.461597, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 42.0, "ref_runtime_us": 1.21, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782370858.167404, "event_type": "eval_start"}, {"timestamp": 1782370858.16747, "event_type": "load_reference_model_start"}, {"timestamp": 1782370858.168673, "event_type": "load_reference_model_end", "duration_s": 0.001197}, {"timestamp": 1782370858.16868, "event_type": "custom_model_import_start"}, {"timestamp": 1782370858.225671, "event_type": "custom_model_import_end", "duration_s": 0.05698}, {"timestamp": 1782370858.225677, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782370858.225993, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000311}, {"timestamp": 1782370858.225995, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782370860.880167, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 2.654133}, {"timestamp": 1782370860.880189, "event_type": "correctness_check_start"}, {"timestamp": 1782370863.90344, "event_type": "correctness_check_end", "duration_s": 3.023227}, {"timestamp": 1782370865.404304, "event_type": "candidate_profile_start"}, {"timestamp": 1782370867.061112, "event_type": "candidate_profile_end", "duration_s": 1.656768}, {"timestamp": 1782370868.561726, "event_type": "reference_profile_start"}, {"timestamp": 1782370868.627757, "event_type": "reference_profile_end", "duration_s": 0.065987}, {"timestamp": 1782370868.628173, "event_type": "cleanup_start"}, {"timestamp": 1782370868.628623, "event_type": "cleanup_end", "duration_s": 0.000444}, {"timestamp": 1782370868.62863, "event_type": "eval_end", "duration_s": 10.461225}], "load_reference_model_s": 0.001197, "custom_model_import_compile_s": 0.05698, "instantiate_and_to_device_s": 0.000311, "first_candidate_invocation_s": 2.654133, "correctness_check_s": 3.023227, "candidate_profile_wall_time_s": 1.656768, "reference_profile_wall_time_s": 0.065987, "cleanup_s": 0.000444, "eval_total_wall_time_s": 10.461225, "compile_time_s": 2.711113, "profile_time_s": 1.722755}}, "runtime_stats": {"mean": 42.0, "std": 0.0, "min": 42.0, "max": 42.0, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 1.21, "std": 0.0, "min": 1.21, "max": 1.21, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782370858.167404, "event_type": "eval_start"}, {"timestamp": 1782370858.16747, "event_type": "load_reference_model_start"}, {"timestamp": 1782370858.168673, "event_type": "load_reference_model_end", "duration_s": 0.001197}, {"timestamp": 1782370858.16868, "event_type": "custom_model_import_start"}, {"timestamp": 1782370858.225671, "event_type": "custom_model_import_end", "duration_s": 0.05698}, {"timestamp": 1782370858.225677, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782370858.225993, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000311}, {"timestamp": 1782370858.225995, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782370860.880167, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 2.654133}, {"timestamp": 1782370860.880189, "event_type": "correctness_check_start"}, {"timestamp": 1782370863.90344, "event_type": "correctness_check_end", "duration_s": 3.023227}, {"timestamp": 1782370865.404304, "event_type": "candidate_profile_start"}, {"timestamp": 1782370867.061112, "event_type": "candidate_profile_end", "duration_s": 1.656768}, {"timestamp": 1782370868.561726, "event_type": "reference_profile_start"}, {"timestamp": 1782370868.627757, "event_type": "reference_profile_end", "duration_s": 0.065987}, {"timestamp": 1782370868.628173, "event_type": "cleanup_start"}, {"timestamp": 1782370868.628623, "event_type": "cleanup_end", "duration_s": 0.000444}, {"timestamp": 1782370868.62863, "event_type": "eval_end", "duration_s": 10.461225}], "load_reference_model_s": 0.001197, "custom_model_import_compile_s": 0.05698, "instantiate_and_to_device_s": 0.000311, "first_candidate_invocation_s": 2.654133, "correctness_check_s": 3.023227, "candidate_profile_wall_time_s": 1.656768, "reference_profile_wall_time_s": 0.065987, "cleanup_s": 0.000444, "eval_total_wall_time_s": 10.461225, "compile_time_s": 2.711113, "profile_time_s": 1.722755}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+codex
+Implemented the pipelined MFMA kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py). The main change is a double-buffered LDS layout with split natural-half consumption of each 16-byte fragment, plus a steady-state K-loop unrolled by 2 tiles and an epilogue for the final pair.
+
+Validation passed with the exact required command. The round-local result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/debug_eval.jsonl) shows `compiled: true`, `correctness: true`, and `runtime_us: 42.0`.
+diff --git a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+index 571cffb6d4e82de634dc090c8931ea1d7d37dc59..51f07ddc11df6daad87468d8aca5328e43e99080
+--- a/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p11/optimization_rounds/round2/output_model_new.py
+@@ -46,56 +46,183 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     bt_rsrc = S.amdgpu.make_rsrc(BT, bt_range_bytes)
+ 
+-    a_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
+-    b_shared = S.make_shared((4, WAVE_SIZE, 4), S.u32)
++    # [buffer, wave, lane, natural_half, u32_pair]
++    a_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
++    b_shared = S.make_shared((2, 4, WAVE_SIZE, 2, 2), S.u32)
+ 
+     acc = S.full((16,), 0.0, S.f32)
+     zero = S.convert(0, S.i32)
+ 
+-    for k_base in S.range(0, L, BLOCK_K):
+-        a_row = wave_row_base + lane_inner
+-        a_k = k_base + lane_group * 8
+-        a_elem_offset = a_row * L + a_k
+-        a_byte_offset = S.convert(a_elem_offset * 2, S.i32)
+-        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_byte_offset, 0)
++    a_row = wave_row_base + lane_inner
++    b_col = wave_col_base + lane_inner
++
++    # Prologue: preload the first two K-tiles into the two LDS buffers.
++    a_k0 = lane_group * 8
++    a_elem_offset0 = a_row * L + a_k0
++    a_pack0 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane + 32, 1, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane + 32, 1, 1] = a_pack0[3]
++    else:
++        a_shared[0, wave_id, lane - 32, 1, 0] = a_pack0[0]
++        a_shared[0, wave_id, lane - 32, 1, 1] = a_pack0[1]
++        a_shared[0, wave_id, lane, 0, 0] = a_pack0[2]
++        a_shared[0, wave_id, lane, 0, 1] = a_pack0[3]
++
++    b_k0 = lane_group * 8
++    b_elem_offset0 = b_col * L + b_k0
++    b_pack0 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset0 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane + 32, 1, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane + 32, 1, 1] = b_pack0[3]
++    else:
++        b_shared[0, wave_id, lane - 32, 1, 0] = b_pack0[0]
++        b_shared[0, wave_id, lane - 32, 1, 1] = b_pack0[1]
++        b_shared[0, wave_id, lane, 0, 0] = b_pack0[2]
++        b_shared[0, wave_id, lane, 0, 1] = b_pack0[3]
++
++    a_k1 = BLOCK_K + lane_group * 8
++    a_elem_offset1 = a_row * L + a_k1
++    a_pack1 = S.amdgpu.raw_buffer_load_x4(
++        a_rsrc, zero, S.convert(a_elem_offset1 * 2, S.i32), 0
++    )
++
++    if lane_group == 0:
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane + 32, 1, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane + 32, 1, 1] = a_pack1[3]
++    else:
++        a_shared[1, wave_id, lane - 32, 1, 0] = a_pack1[0]
++        a_shared[1, wave_id, lane - 32, 1, 1] = a_pack1[1]
++        a_shared[1, wave_id, lane, 0, 0] = a_pack1[2]
++        a_shared[1, wave_id, lane, 0, 1] = a_pack1[3]
++
++    b_k1 = BLOCK_K + lane_group * 8
++    b_elem_offset1 = b_col * L + b_k1
++    b_pack1 = S.amdgpu.raw_buffer_load_x4(
++        bt_rsrc, zero, S.convert(b_elem_offset1 * 2, S.i32), 0
++    )
+ 
++    if lane_group == 0:
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane + 32, 1, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane + 32, 1, 1] = b_pack1[3]
++    else:
++        b_shared[1, wave_id, lane - 32, 1, 0] = b_pack1[0]
++        b_shared[1, wave_id, lane - 32, 1, 1] = b_pack1[1]
++        b_shared[1, wave_id, lane, 0, 0] = b_pack1[2]
++        b_shared[1, wave_id, lane, 0, 1] = b_pack1[3]
++
++    S.syncthreads()
++
++    for k_pair_base in S.range(0, L - 2 * BLOCK_K, 2 * BLOCK_K):
++        a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++        next_a_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_a_elem_offset0 = a_row * L + next_a_k0
++        next_a_pack0 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset0 * 2, S.i32), 0
++        )
++
++        next_b_k0 = k_pair_base + 2 * BLOCK_K + lane_group * 8
++        next_b_elem_offset0 = b_col * L + next_b_k0
++        next_b_pack0 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset0 * 2, S.i32), 0
++        )
++
++        a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
++
+         if lane_group == 0:
+-            a_shared[wave_id, lane, 0] = a_pack[0]
+-            a_shared[wave_id, lane, 1] = a_pack[1]
+-            a_shared[wave_id, lane + 32, 0] = a_pack[2]
+-            a_shared[wave_id, lane + 32, 1] = a_pack[3]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane + 32, 1, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane + 32, 1, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane + 32, 1, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane + 32, 1, 1] = next_b_pack0[3]
+         else:
+-            a_shared[wave_id, lane - 32, 2] = a_pack[0]
+-            a_shared[wave_id, lane - 32, 3] = a_pack[1]
+-            a_shared[wave_id, lane, 2] = a_pack[2]
+-            a_shared[wave_id, lane, 3] = a_pack[3]
++            a_shared[0, wave_id, lane - 32, 1, 0] = next_a_pack0[0]
++            a_shared[0, wave_id, lane - 32, 1, 1] = next_a_pack0[1]
++            a_shared[0, wave_id, lane, 0, 0] = next_a_pack0[2]
++            a_shared[0, wave_id, lane, 0, 1] = next_a_pack0[3]
++            b_shared[0, wave_id, lane - 32, 1, 0] = next_b_pack0[0]
++            b_shared[0, wave_id, lane - 32, 1, 1] = next_b_pack0[1]
++            b_shared[0, wave_id, lane, 0, 0] = next_b_pack0[2]
++            b_shared[0, wave_id, lane, 0, 1] = next_b_pack0[3]
+ 
+-        b_col = wave_col_base + lane_inner
+-        b_k = k_base + lane_group * 8
+-        b_elem_offset = b_col * L + b_k
+-        b_byte_offset = S.convert(b_elem_offset * 2, S.i32)
+-        b_pack = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, b_byte_offset, 0)
++        a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
++
++        next_a_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_a_elem_offset1 = a_row * L + next_a_k1
++        next_a_pack1 = S.amdgpu.raw_buffer_load_x4(
++            a_rsrc, zero, S.convert(next_a_elem_offset1 * 2, S.i32), 0
++        )
+ 
++        next_b_k1 = k_pair_base + 3 * BLOCK_K + lane_group * 8
++        next_b_elem_offset1 = b_col * L + next_b_k1
++        next_b_pack1 = S.amdgpu.raw_buffer_load_x4(
++            bt_rsrc, zero, S.convert(next_b_elem_offset1 * 2, S.i32), 0
++        )
++
++        a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
++
+         if lane_group == 0:
+-            b_shared[wave_id, lane, 0] = b_pack[0]
+-            b_shared[wave_id, lane, 1] = b_pack[1]
+-            b_shared[wave_id, lane + 32, 0] = b_pack[2]
+-            b_shared[wave_id, lane + 32, 1] = b_pack[3]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane + 32, 1, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane + 32, 1, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane + 32, 1, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane + 32, 1, 1] = next_b_pack1[3]
+         else:
+-            b_shared[wave_id, lane - 32, 2] = b_pack[0]
+-            b_shared[wave_id, lane - 32, 3] = b_pack[1]
+-            b_shared[wave_id, lane, 2] = b_pack[2]
+-            b_shared[wave_id, lane, 3] = b_pack[3]
++            a_shared[1, wave_id, lane - 32, 1, 0] = next_a_pack1[0]
++            a_shared[1, wave_id, lane - 32, 1, 1] = next_a_pack1[1]
++            a_shared[1, wave_id, lane, 0, 0] = next_a_pack1[2]
++            a_shared[1, wave_id, lane, 0, 1] = next_a_pack1[3]
++            b_shared[1, wave_id, lane - 32, 1, 0] = next_b_pack1[0]
++            b_shared[1, wave_id, lane - 32, 1, 1] = next_b_pack1[1]
++            b_shared[1, wave_id, lane, 0, 0] = next_b_pack1[2]
++            b_shared[1, wave_id, lane, 0, 1] = next_b_pack1[3]
+ 
+         S.syncthreads()
+ 
+-        a_frag = S.view(a_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[wave_id, lane], S.Tensor((2, 4, 1), S.bf16))
++    a0_lo = S.view(a_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b0_lo = S.view(b_shared[0, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_lo[0], b0_lo[0], acc)
++
++    a0_hi = S.view(a_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b0_hi = S.view(b_shared[0, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a0_hi[0], b0_hi[0], acc)
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a1_lo = S.view(a_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    b1_lo = S.view(b_shared[1, wave_id, lane, 0], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_lo[0], b1_lo[0], acc)
+ 
+-        S.syncthreads()
++    a1_hi = S.view(a_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    b1_hi = S.view(b_shared[1, wave_id, lane, 1], S.Tensor((1, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a1_hi[0], b1_hi[0], acc)
+ 
+     for acc_idx in S.range(16):
+         out_col = wave_col_base + lane_inner
+
+tokens used
+62,424

@@ -1,0 +1,18 @@
+The implementation is complete. Here's a summary:
+
+**Implementation Summary:**
+- Created MFMA-optimized Conv2D kernel with Split-K reduction for asymmetric kernel (5x9)
+- Split-K divides input channels into 2 slices (channels 0-15 and 16-31)
+- Each slice is computed by a separate kernel launch writing to its own workspace
+- A reduction kernel combines the partial sums
+- Store kernel converts fp32 workspace to bf16 NCHW output
+
+**Key Design Decisions:**
+- Used sequential kernel launches for Split-K slices instead of parallel blocks with atomic reduction, as `buffer_atomic_add_f32` had issues with large buffer sizes
+- Followed the candidate_input.py structure for thread-to-output mapping (lane-based distribution, 4 rows per lane, MFMA_K=8 chunks)
+- Implemented K linearization: `k_idx = c * kernel_area + kh * kernel_w + kw`
+
+**Tests Passed:**
+- `test_mfma_conv2d_benchmark_shape` - correctness validation
+- `test_mfma_conv2d_output_shape` - output shape (8, 64, 508, 504)
+- `test_mfma_conv2d_rejects_wrong_shape` - input validation

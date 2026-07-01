@@ -1,0 +1,4383 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efeca-9831-7053-8e37-02e33b87d4b8
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel and the nearest local MFMA example first, then I’ll move directly into editing `output_model_new.py` and validate with the round-local harness.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+SQRT_2 = 1.4142135623730951
+
+def _launch():
+    return ((1, 1, 1), (1, 1, 1))
+BATCH_SIZE = 1024
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+
+@substrate.jit
+def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
+    one = S.convert(1.0, S.f32)
+    for i in S.range(BATCH_SIZE):
+        for j in S.range(OUT_FEATURES):
+            x = S.convert(0.0, S.f32)
+            for kk in S.range(IN_FEATURES):
+                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+            x = x * (one / (one + S.exp(-x)))
+            x = S.tanh(x)
+            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+            if x < S.convert(-1.0, S.f32):
+                x = S.convert(-1.0, S.f32)
+            if x > S.convert(1.0, S.f32):
+                x = S.convert(1.0, S.f32)
+            Y[i, j] = S.convert(x, S.bf16)
+
+class ModelNew(nn.Module):
+
+    def __init__(self, in_features, out_features, add_value_shape):
+        super().__init__()
+        self.matmul = nn.Linear(in_features, out_features)
+        self.add_value = nn.Parameter(torch.randn(add_value_shape))
+
+    def forward(self, x):
+        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
+        return y
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+SQRT_2 = 1.4142135623730951
+
+def _launch():
+    return ((1, 1, 1), (1, 1, 1))
+BATCH_SIZE = 1024
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+
+@substrate.jit
+def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
+    one = S.convert(1.0, S.f32)
+    for i in S.range(BATCH_SIZE):
+        for j in S.range(OUT_FEATURES):
+            x = S.convert(0.0, S.f32)
+            for kk in S.range(IN_FEATURES):
+                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+            x = x * (one / (one + S.exp(-x)))
+            x = S.tanh(x)
+            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+            if x < S.convert(-1.0, S.f32):
+                x = S.convert(-1.0, S.f32)
+            if x > S.convert(1.0, S.f32):
+                x = S.convert(1.0, S.f32)
+            Y[i, j] = S.convert(x, S.bf16)
+
+class ModelNew(nn.Module):
+
+    def __init__(self, in_features, out_features, add_value_shape):
+        super().__init__()
+        self.matmul = nn.Linear(in_features, out_features)
+        self.add_value = nn.Parameter(torch.randn(add_value_shape))
+
+    def forward(self, x):
+        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
+        return y
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+The starting kernel is a scalar reference path. I have the MFMA call shape from the example; next I’m checking for the smallest local examples of `raw_buffer_load_x4`, LDS staging, and multi-wave tiling so I can wire the first kernel version without detouring into internals.
+exec
+/bin/bash -lc "rg -n \"raw_buffer_load_x4|mfma_32x32x8_bf16_f32|LocalTensor|lds|shared\" /workspace/substrate/test/examples /workspace/substrate/test -g '*.py'" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:53:    a_smem = S.make_shared((2, 2, 2, 16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:54:    b_smem = S.make_shared((2, 2, 2, 8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:55:    c_smem = S.make_shared((2, 2, 2, 2, 16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:164:    # Store results to shared memory
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:53:    a_smem = S.make_shared((2, 2, 2, 16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:54:    b_smem = S.make_shared((2, 2, 2, 8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:55:    c_smem = S.make_shared((2, 2, 2, 2, 16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:164:    # Store results to shared memory
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:30:    a_smem = S.make_shared((16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:31:    b_smem = S.make_shared((8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:32:    c_smem = S.make_shared((16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:53:        # Load from shared memory to registers via ldmatrix
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:73:    # Store results back to shared memory: each thread writes its 4 f16 values to c_smem
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:30:    a_smem = S.make_shared((16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:31:    b_smem = S.make_shared((8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:32:    c_smem = S.make_shared((16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:53:        # Load from shared memory to registers via ldmatrix
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:73:    # Store results back to shared memory: each thread writes its 4 f16 values to c_smem
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:24:    shared_buf = S.make_shared((GLOBAL_SIZE,), S.i32)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:26:    shared_buf[tid] = add_global(input_data[tid])
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:28:    output_data[tid] = shared_buf[GLOBAL_SIZE - 1 - tid]
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:35:    shared_buf = S.make_shared((4,), S.f32)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:37:    shared_buf[tid] = GLOBAL_F32_EXACT
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:39:    output_data[tid] = shared_buf[tid]
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:15:    shared_buf = S.make_shared((32,), S.i32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:19:    shared_buf[thread_id] = input_data[thread_id]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:24:    output_data[thread_id] = shared_buf[read_idx]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:32:    shared_buf = S.make_shared((16, 16), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:37:    shared_buf[thread_y, thread_x] = input_matrix[thread_y, thread_x]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:41:    output_matrix[thread_y, thread_x] = shared_buf[thread_x, thread_y]  # Transpose
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:49:    shared_buf = S.make_shared((32,), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:53:    shared_buf[thread_id] = input_data[thread_id]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:59:            shared_buf[thread_id] = shared_buf[thread_id] + shared_buf[thread_id + stride]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:64:        result[0] = shared_buf[0]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:69:    shared_words = S.make_shared((16,), S.u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:70:    left_words = S.subview(shared_words, (0,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:71:    right_words = S.subview(shared_words, (8,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:90:    shared_words = S.make_shared((32,), S.u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:91:    stats_words = S.subview(shared_words, (0,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:92:    q_words = S.subview(shared_words, (8,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:93:    kv_words = S.subview(shared_words, (16,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:94:    score_words = S.subview(shared_words, (24,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:124:    def test_basic_shared_memory(self):
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:125:        """Test basic shared memory read/write functionality"""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:141:    def test_2d_shared_memory(self):
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:142:        """Test 2D shared memory with matrix transpose"""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:159:        """Test shared memory reduction operation"""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:173:        """Test that typed views preserve non-zero shared subview offsets."""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:187:        """Test mixed f32/bf16/u32 typed views on distinct shared subviews."""
+
+exec
+/bin/bash -lc "rg -n \"raw_buffer_load_x4\" /workspace/substrate -g '*.py'" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+
+codex
+I found exactly the local primitives I need. I’m reading the buffer-load and shared-memory tests now, then I’ll patch `output_model_new.py` immediately with a first MFMA/LDS implementation.
+exec
+/bin/bash -lc "sed -n '1,240p' /workspace/substrate/test/primitives/memory/test_shared_memory.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+
+
+@substrate.jit
+def kernel_shm_basic(
+    input_data: S.Tensor((32,), S.i32),
+    output_data: S.Tensor((32,), S.i32),
+):
+    shared_buf = S.make_shared((32,), S.i32)
+
+    thread_id = S.thread_id(0)
+
+    shared_buf[thread_id] = input_data[thread_id]
+
+    S.syncthreads()
+
+    read_idx = (thread_id + 1) % 32
+    output_data[thread_id] = shared_buf[read_idx]
+
+
+@substrate.jit
+def kernel_shm_2d(
+    input_matrix: S.Tensor((16, 16), S.f32),
+    output_matrix: S.Tensor((16, 16), S.f32),
+):
+    shared_buf = S.make_shared((16, 16), S.f32)
+
+    thread_x = S.thread_id(0)
+    thread_y = S.thread_id(1)
+
+    shared_buf[thread_y, thread_x] = input_matrix[thread_y, thread_x]
+
+    S.syncthreads()
+
+    output_matrix[thread_y, thread_x] = shared_buf[thread_x, thread_y]  # Transpose
+
+
+@substrate.jit
+def kernel_shm_reduction(
+    input_data: S.Tensor((32,), S.f32),
+    result: S.Tensor((2,), S.f32),
+):
+    shared_buf = S.make_shared((32,), S.f32)
+
+    thread_id = S.thread_id(0)
+
+    shared_buf[thread_id] = input_data[thread_id]
+    S.syncthreads()
+
+    stride = 16
+    for i in S.range(5):  # log2(32) = 5
+        if thread_id < stride:
+            shared_buf[thread_id] = shared_buf[thread_id] + shared_buf[thread_id + stride]
+        S.syncthreads()
+        stride = stride >> 0x1
+
+    if thread_id == 0:
+        result[0] = shared_buf[0]
+
+
+@substrate.jit
+def kernel_shm_subview_view_offsets(result: S.Tensor((2,), S.u32)):
+    shared_words = S.make_shared((16,), S.u32)
+    left_words = S.subview(shared_words, (0,), (8,), (1,))
+    right_words = S.subview(shared_words, (8,), (8,), (1,))
+    layout = S.make_layout((2, 2), (2, 1))
+    left = S.view(left_words, S.u32, layout)
+    right = S.view(right_words, S.u32, layout)
+
+    tid = S.thread_id(0)
+    if tid == 0:
+        left[0, 0] = S.convert(11, S.u32)
+        right[0, 0] = S.convert(22, S.u32)
+
+    S.syncthreads()
+
+    if tid == 0:
+        result[0] = left[0, 0]
+        result[1] = right[0, 0]
+
+
+@substrate.jit
+def kernel_shm_subview_view_mixed_types(result: S.Tensor((4,), S.i32)):
+    shared_words = S.make_shared((32,), S.u32)
+    stats_words = S.subview(shared_words, (0,), (8,), (1,))
+    q_words = S.subview(shared_words, (8,), (8,), (1,))
+    kv_words = S.subview(shared_words, (16,), (8,), (1,))
+    score_words = S.subview(shared_words, (24,), (8,), (1,))
+    layout_f32 = S.make_layout((2, 4), (4, 1))
+    layout_bf16 = S.make_layout((2, 4), (4, 1))
+    layout_u32 = S.make_layout((2, 2), (2, 1))
+    stats = S.view(stats_words, S.f32, layout_f32)
+    q = S.view(q_words, S.bf16, layout_bf16)
+    kv = S.view(kv_words, S.bf16, layout_bf16)
+    score = S.view(score_words, S.f32, layout_f32)
+    q_u32 = S.view(q_words, S.u32, layout_u32)
+    kv_u32 = S.view(kv_words, S.u32, layout_u32)
+
+    tid = S.thread_id(0)
+    if tid == 0:
+        stats[0, 0] = S.convert(3.0, S.f32)
+        score[0, 0] = S.convert(4.0, S.f32)
+        q[0, 0] = S.convert(1.0, S.bf16)
+        q[0, 1] = S.convert(2.0, S.bf16)
+        kv[0, 0] = S.convert(3.0, S.bf16)
+        kv[0, 1] = S.convert(4.0, S.bf16)
+
+    S.syncthreads()
+
+    if tid == 0:
+        result[0] = S.convert(stats[0, 0], S.i32)
+        result[1] = q_u32[0, 0]
+        result[2] = kv_u32[0, 0]
+        result[3] = S.convert(score[0, 0], S.i32)
+
+
+class TestSharedMemoryOps(unittest.TestCase):
+    def test_basic_shared_memory(self):
+        """Test basic shared memory read/write functionality"""
+        input_data = torch.arange(32, dtype=torch.int32, device="cuda")
+        output_data = torch.zeros(32, dtype=torch.int32, device="cuda")
+
+        expected = torch.cat([input_data[1:], input_data[0:1]])
+
+        kernel_shm_basic[lambda: ((1, 1, 1), (32, 1, 1))](input_data, output_data)
+
+        actual = output_data.cpu()
+        expected = expected.cpu()
+
+        self.assertTrue(
+            torch.equal(actual, expected),
+            f"Expected: {expected.tolist()}, Actual: {actual.tolist()}",
+        )
+
+    def test_2d_shared_memory(self):
+        """Test 2D shared memory with matrix transpose"""
+        input_matrix = torch.arange(256, dtype=torch.float32, device="cuda").reshape(16, 16)
+        output_matrix = torch.zeros((16, 16), dtype=torch.float32, device="cuda")
+
+        expected = input_matrix.t()  # Transpose
+
+        kernel_shm_2d[lambda: ((1, 1, 1), (16, 16, 1))](input_matrix, output_matrix)
+
+        actual = output_matrix.cpu()
+        expected = expected.cpu()
+
+        self.assertTrue(
+            torch.allclose(actual, expected),
+            f"Max difference: {(actual - expected).abs().max()}",
+        )
+
+    def test_shm_reduction(self):
+        """Test shared memory reduction operation"""
+        input_data = torch.ones(32, dtype=torch.float32, device="cuda")
+        result = torch.zeros(2, dtype=torch.float32, device="cuda")
+
+        expected = torch.sum(input_data)
+
+        kernel_shm_reduction[lambda: ((1, 1, 1), (32, 1, 1))](input_data, result)
+
+        actual = result[0].cpu().item()
+        expected = expected.cpu().item()
+
+        self.assertAlmostEqual(actual, expected, places=5, msg=f"Expected: {expected}, Got: {actual}")
+
+    def test_shm_subview_view_offsets(self):
+        """Test that typed views preserve non-zero shared subview offsets."""
+        result = torch.zeros(2, dtype=torch.int32, device="cuda")
+
+        kernel_shm_subview_view_offsets[lambda: ((1, 1, 1), (32, 1, 1))](result)
+
+        actual = result.cpu()
+        expected = torch.tensor([11, 22], dtype=torch.int32)
+
+        self.assertTrue(
+            torch.equal(actual, expected),
+            f"Expected: {expected.tolist()}, Actual: {actual.tolist()}",
+        )
+
+    def test_shm_subview_view_mixed_types(self):
+        """Test mixed f32/bf16/u32 typed views on distinct shared subviews."""
+        result = torch.zeros(4, dtype=torch.int32, device="cuda")
+
+        kernel_shm_subview_view_mixed_types[lambda: ((1, 1, 1), (32, 1, 1))](result)
+
+        actual = result.cpu()
+        expected = torch.tensor([3, 1073758080, 1082146880, 4], dtype=torch.int32)
+
+        self.assertTrue(
+            torch.equal(actual, expected),
+            f"Expected: {expected.tolist()}, Actual: {actual.tolist()}",
+        )
+
+if __name__ == "__main__":
+    unittest.main()
+
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+import _substrate_bindings as _C
+from substrate.compiler.code_generator import (
+    _build_import_module,
+    _collect_jit_dependencies,
+    _get_function_def,
+)
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_roundtrip(
+    src: S.Tensor((7,), S.i32),
+    dst: S.Tensor((7,), S.i32),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+    dst_rsrc = S.amdgpu.make_rsrc(dst, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    offset_x2 = S.convert(4, S.i32)
+    offset_x4 = S.convert(12, S.i32)
+
+    value_x1 = S.amdgpu.raw_buffer_load_x1(src_rsrc, zero, zero, 0)
+    value_x2 = S.amdgpu.raw_buffer_load_x2(src_rsrc, zero, offset_x2, 0)
+    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+
+    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_bf16_view(
+    src: S.Tensor((8,), S.bf16),
+    dst: S.Tensor((8,), S.bf16),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+    frag = S.view(packed, S.Tensor((2, 4, 1), S.bf16))
+
+    for i in S.range(2):
+        for j in S.range(4):
+            dst[i * 4 + j] = frag[i, j, 0]
+
+
+def generate_mlir(jit_fn) -> str:
+    jit_deps = _collect_jit_dependencies(jit_fn)
+    import_module = _build_import_module([jit_fn, *jit_deps])
+
+    generator = _C.MLIRGenerator()
+    generator.generate_from_python_ast(import_module)
+
+    for dep in jit_deps:
+        dep_func = _get_function_def(dep.parse())
+        generator.visit_function_def(dep_func, "[]", "jit")
+
+    kernel_func = _get_function_def(jit_fn.parse())
+    generator.visit_function_def(kernel_func, "[]", "kernel")
+    return generator.get_mlir()
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferOps(unittest.TestCase):
+    def test_raw_buffer_roundtrip(self):
+        src = torch.arange(7, dtype=torch.int32, device="cuda") * 17 - 9
+        dst = torch.full((7,), -1, dtype=torch.int32, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_roundtrip[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+    def test_make_rsrc_generates_pointer_and_range(self):
+        mlir = generate_mlir(kernel_amdgpu_raw_buffer_roundtrip)
+
+        self.assertIn(
+            "substrate.memref.extract_aligned_pointer_as_index",
+            mlir,
+        )
+        self.assertGreaterEqual(mlir.count("vector.insert %arg2"), 2, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_load"), 3, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+
+    def test_raw_buffer_bf16_view_extract(self):
+        src = torch.randn((8,), dtype=torch.bfloat16, device="cuda")
+        dst = torch.zeros((8,), dtype=torch.bfloat16, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_bf16_view[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+codex
+I have enough to write the first attempt. I’m patching `output_model_new.py` now with a tiled four-wave kernel, LDS staging, `raw_buffer_load_x4`, and MFMA accumulation, then I’ll run the required round-local evaluation to see the first concrete failure if any.
+exec
+/bin/bash -lc "rg -n \"mfma_32x32x8_bf16_f32|mfma_16x16x16_f16_f32|amdgpu\\.mfma\" /workspace/substrate/test -g '*.py'" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:24:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:25:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+codex
+The MFMA input/output lane layout is the only nontrivial part left. I’m using a tiny inline probe with the local example kernel to derive the accumulator mapping empirically instead of reading more infrastructure files.
+exec
+/bin/bash -lc "python - <<'PY'
+import torch
+import substrate
+import substrate.language as S
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(A: S.Tensor((64, 2), S.u32), B: S.Tensor((64, 2), S.u32), C: S.Tensor((64, 16), S.f32)):
+    lane = S.thread_id(0)
+    c_lane = S.full((16,), 0.0, S.f32)
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+    C[lane] = c_lane
+
+def pack_a(mat):
+    vals = torch.zeros((64,4), dtype=torch.bfloat16)
+    for lane in range(64):
+        row = lane % 32
+        q = lane // 32
+        vals[lane] = mat[row, q*4:(q+1)*4]
+    return vals.view(torch.int32).reshape(64,2).cuda()
+
+def pack_b(mat):
+    vals = torch.zeros((64,4), dtype=torch.bfloat16)
+    for lane in range(64):
+        col = lane % 32
+        q = lane // 32
+        vals[lane,0] = mat[q*4+0, col]
+        vals[lane,1] = mat[q*4+1, col]
+        vals[lane,2] = mat[q*4+2, col]
+        vals[lane,3] = mat[q*4+3, col]
+    return vals.view(torch.int32).reshape(64,2).cuda()
+
+A = torch.zeros((32,8), dtype=torch.bfloat16)
+B = torch.zeros((8,32), dtype=torch.bfloat16)
+A[0,0] = 1
+B[0,0] = 1
+Ap = pack_a(A)
+Bp = pack_b(B)
+C = torch.zeros((64,16), dtype=torch.float32, device='cuda')
+gemm_mfma_32x32x8_bf16[lambda: ((1,1,1),(64,1,1))](Ap, Bp, C)
+cnz = (C.cpu()"'!=0).nonzero()
+print('"'nonzero count', cnz.shape[0])
+print(cnz[:20])
+if cnz.shape[0]:
+    for idx in cnz[:20]:
+        i,j=idx.tolist()
+        print(i,j,C[i,j].item())
+PY" in /workspace/kernel_benchmark
+ exited 1 in 1325ms:
+Traceback (most recent call last):
+  File "/workspace/substrate/python/substrate/runtime/jit.py", line 510, in __init__
+    self.raw_src, self.starting_line_number = inspect.getsourcelines(fn)
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 1260, in getsourcelines
+    lines, lnum = findsource(object)
+                  ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/inspect.py", line 1089, in findsource
+    raise OSError('could not get source code')
+OSError: could not get source code
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "/workspace/substrate/python/substrate/runtime/jit.py", line 844, in jit
+    return decorator(fn)
+           ^^^^^^^^^^^^^
+  File "/workspace/substrate/python/substrate/runtime/jit.py", line 839, in decorator
+    return JITFunction(func)
+           ^^^^^^^^^^^^^^^^^
+  File "/workspace/substrate/python/substrate/runtime/jit.py", line 693, in __init__
+    super().__init__(fn)
+  File "/workspace/substrate/python/substrate/runtime/jit.py", line 512, in __init__
+    raise ValueError("@jit functions should be defined in a Python file") from e
+ValueError: @jit functions should be defined in a Python file
+
+codex
+The inline probe needs a real Python file because `@substrate.jit` rejects stdin-defined kernels. I’m creating one temporary probe script in the round directory, using it to pin down the lane mapping, and then I’ll remove it after I have the concrete formula.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..26c6f0c586fa0b7326c580cdeaa5ce3361f89b24
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,60 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    run_case(0, 0)
++    run_case(0, 1)
++    run_case(1, 0)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..26c6f0c586fa0b7326c580cdeaa5ce3361f89b24
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,60 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    run_case(0, 0)
++    run_case(0, 1)
++    run_case(1, 0)
+
+exec
+/bin/bash -lc 'python /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..26c6f0c586fa0b7326c580cdeaa5ce3361f89b24
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,60 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    run_case(0, 0)
++    run_case(0, 1)
++    run_case(1, 0)
+
+ succeeded in 2720ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+r 0 c 0 count 1
+0 0 1.0
+r 0 c 1 count 1
+1 0 1.0
+r 1 c 0 count 1
+0 1 1.0
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..42d98a3ef8da4ddd20096117eda6476528457087
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,68 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (0, 4),
++        (4, 0),
++        (0, 16),
++        (16, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..42d98a3ef8da4ddd20096117eda6476528457087
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,68 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (0, 4),
++        (4, 0),
++        (0, 16),
++        (16, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
+
+exec
+/bin/bash -lc 'python /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..42d98a3ef8da4ddd20096117eda6476528457087
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,68 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (0, 4),
++        (4, 0),
++        (0, 16),
++        (16, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
+
+ succeeded in 2722ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+r 0 c 0 count 1
+0 0 1.0
+r 0 c 1 count 1
+1 0 1.0
+r 1 c 0 count 1
+0 1 1.0
+r 0 c 4 count 1
+4 0 1.0
+r 4 c 0 count 1
+32 0 1.0
+r 0 c 16 count 1
+16 0 1.0
+r 16 c 0 count 1
+0 8 1.0
+r 31 c 31 count 1
+63 15 1.0
+
+codex
+The probe is working. I’m sampling a few more basis outputs to lock in the accumulator writeback formula, then I can finish the fused kernel without any more reference reads.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3af187833844b3a62ab4e376e14d126ff9b4dce
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,76 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3af187833844b3a62ab4e376e14d126ff9b4dce
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,76 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
+
+exec
+/bin/bash -lc 'python /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3af187833844b3a62ab4e376e14d126ff9b4dce
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,76 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
+
+ succeeded in 2876ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+r 0 c 0 count 1
+0 0 1.0
+r 0 c 1 count 1
+1 0 1.0
+r 1 c 0 count 1
+0 1 1.0
+r 2 c 0 count 1
+0 2 1.0
+r 3 c 0 count 1
+0 3 1.0
+r 0 c 4 count 1
+4 0 1.0
+r 4 c 0 count 1
+32 0 1.0
+r 5 c 0 count 1
+32 1 1.0
+r 8 c 0 count 1
+0 4 1.0
+r 12 c 0 count 1
+32 4 1.0
+r 0 c 16 count 1
+16 0 1.0
+r 16 c 0 count 1
+0 8 1.0
+r 17 c 0 count 1
+0 9 1.0
+r 20 c 0 count 1
+32 8 1.0
+r 24 c 0 count 1
+0 12 1.0
+r 31 c 31 count 1
+63 15 1.0
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+exec
+/bin/bash -lc 'python /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+ succeeded in 3448ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+r 0 c 0 count 1
+0 0 1.0
+r 0 c 1 count 1
+1 0 1.0
+r 1 c 0 count 1
+0 1 1.0
+r 2 c 0 count 1
+0 2 1.0
+r 3 c 0 count 1
+0 3 1.0
+r 0 c 4 count 1
+4 0 1.0
+r 4 c 0 count 1
+32 0 1.0
+r 5 c 0 count 1
+32 1 1.0
+r 8 c 0 count 1
+0 4 1.0
+r 12 c 0 count 1
+32 4 1.0
+r 0 c 16 count 1
+16 0 1.0
+r 16 c 0 count 1
+0 8 1.0
+r 17 c 0 count 1
+0 9 1.0
+r 20 c 0 count 1
+32 8 1.0
+r 24 c 0 count 1
+0 12 1.0
+r 31 c 31 count 1
+63 15 1.0
+k16 0 0 0 count 1
+0 0 1.0
+k16 0 0 8 count 1
+0 0 1.0
+k16 0 1 12 count 1
+1 0 1.0
+k16 5 7 15 count 1
+39 1 1.0
+
+exec
+/bin/bash -lc "rg -n \"block_id\\(\" /workspace/substrate/test -g '*.py'" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:40:    block_row = S.block_id(1) * BLOCK_M
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:41:    block_col = S.block_id(0) * BLOCK_N
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:25:    warp_row = S.block_id(1) * MMA_M
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:26:    warp_col = S.block_id(0) * MMA_N
+/workspace/substrate/test/primitives/jit/test_kernel_early_return.py:12:    row = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_kernel_early_return.py:21:    out[S.block_id(2), S.block_id(1), row] = acc
+/workspace/substrate/test/primitives/jit/test_tanh_fast_approx.py:40:    idx = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+/workspace/substrate/test/examples/gemv/test_axpy.py:17:    idx = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+codex
+I have the lane formulas now. I’m replacing the scalar kernel with the tiled MFMA implementation and the minimal forward-side caching needed to keep the launch path graph-safe.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+deleted file mode 100644
+index f6acc098c5a27a440d7ca80d211eeb020b571894..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ /dev/null
+@@ -1,46 +0,0 @@
+-import torch
+-import torch.nn as nn
+-import substrate
+-import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+-
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
+-BATCH_SIZE = 1024
+-IN_FEATURES = 8192
+-OUT_FEATURES = 8192
+-
+-@substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
+-    one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
+-
+-class ModelNew(nn.Module):
+-
+-    def __init__(self, in_features, out_features, add_value_shape):
+-        super().__init__()
+-        self.matmul = nn.Linear(in_features, out_features)
+-        self.add_value = nn.Parameter(torch.randn(add_value_shape))
+-
+-    def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
+-        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
+-        return y
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+deleted file mode 100644
+index f6acc098c5a27a440d7ca80d211eeb020b571894..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ /dev/null
+@@ -1,46 +0,0 @@
+-import torch
+-import torch.nn as nn
+-import substrate
+-import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+-
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
+-BATCH_SIZE = 1024
+-IN_FEATURES = 8192
+-OUT_FEATURES = 8192
+-
+-@substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
+-    one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
+-
+-class ModelNew(nn.Module):
+-
+-    def __init__(self, in_features, out_features, add_value_shape):
+-        super().__init__()
+-        self.matmul = nn.Linear(in_features, out_features)
+-        self.add_value = nn.Parameter(torch.randn(add_value_shape))
+-
+-    def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
+-        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
+-        return y
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+ succeeded in 5859ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+codex
+The first validation command completed cleanly. I’m checking the round-local `debug_eval.jsonl` now to confirm it actually passed correctness and didn’t hide a compile/runtime failure behind the harness summary.
+exec
+/bin/bash -lc "sed -n '1,240p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782391477.425257, "run_ended_at": 1782391481.070884, "run_wall_time_s": 3.645625, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 7.42, "ref_runtime_us": 0.332, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782391477.42537, "event_type": "eval_start"}, {"timestamp": 1782391477.425436, "event_type": "load_reference_model_start"}, {"timestamp": 1782391477.760355, "event_type": "load_reference_model_end", "duration_s": 0.334904}, {"timestamp": 1782391477.760447, "event_type": "custom_model_import_start"}, {"timestamp": 1782391477.816344, "event_type": "custom_model_import_end", "duration_s": 0.055886}, {"timestamp": 1782391477.816349, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782391478.434363, "event_type": "instantiate_and_to_device_end", "duration_s": 0.617995}, {"timestamp": 1782391478.434374, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782391479.331954, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 0.897569}, {"timestamp": 1782391479.331961, "event_type": "correctness_check_start"}, {"timestamp": 1782391480.615785, "event_type": "correctness_check_end", "duration_s": 1.283788}, {"timestamp": 1782391480.659206, "event_type": "candidate_profile_start"}, {"timestamp": 1782391480.994541, "event_type": "candidate_profile_end", "duration_s": 0.335304}, {"timestamp": 1782391481.034863, "event_type": "reference_profile_start"}, {"timestamp": 1782391481.06928, "event_type": "reference_profile_end", "duration_s": 0.0344}, {"timestamp": 1782391481.069445, "event_type": "cleanup_start"}, {"timestamp": 1782391481.070654, "event_type": "cleanup_end", "duration_s": 0.001201}, {"timestamp": 1782391481.070658, "event_type": "eval_end", "duration_s": 3.645288}], "load_reference_model_s": 0.334904, "custom_model_import_compile_s": 0.055886, "instantiate_and_to_device_s": 0.617995, "first_candidate_invocation_s": 0.897569, "correctness_check_s": 1.283788, "candidate_profile_wall_time_s": 0.335304, "reference_profile_wall_time_s": 0.0344, "cleanup_s": 0.001201, "eval_total_wall_time_s": 3.645288, "compile_time_s": 0.953455, "profile_time_s": 0.369704}}, "runtime_stats": {"mean": 7.42, "std": 0.0, "min": 7.42, "max": 7.42, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.332, "std": 0.0, "min": 0.332, "max": 0.332, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782391477.42537, "event_type": "eval_start"}, {"timestamp": 1782391477.425436, "event_type": "load_reference_model_start"}, {"timestamp": 1782391477.760355, "event_type": "load_reference_model_end", "duration_s": 0.334904}, {"timestamp": 1782391477.760447, "event_type": "custom_model_import_start"}, {"timestamp": 1782391477.816344, "event_type": "custom_model_import_end", "duration_s": 0.055886}, {"timestamp": 1782391477.816349, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782391478.434363, "event_type": "instantiate_and_to_device_end", "duration_s": 0.617995}, {"timestamp": 1782391478.434374, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782391479.331954, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 0.897569}, {"timestamp": 1782391479.331961, "event_type": "correctness_check_start"}, {"timestamp": 1782391480.615785, "event_type": "correctness_check_end", "duration_s": 1.283788}, {"timestamp": 1782391480.659206, "event_type": "candidate_profile_start"}, {"timestamp": 1782391480.994541, "event_type": "candidate_profile_end", "duration_s": 0.335304}, {"timestamp": 1782391481.034863, "event_type": "reference_profile_start"}, {"timestamp": 1782391481.06928, "event_type": "reference_profile_end", "duration_s": 0.0344}, {"timestamp": 1782391481.069445, "event_type": "cleanup_start"}, {"timestamp": 1782391481.070654, "event_type": "cleanup_end", "duration_s": 0.001201}, {"timestamp": 1782391481.070658, "event_type": "eval_end", "duration_s": 3.645288}], "load_reference_model_s": 0.334904, "custom_model_import_compile_s": 0.055886, "instantiate_and_to_device_s": 0.617995, "first_candidate_invocation_s": 0.897569, "correctness_check_s": 1.283788, "candidate_profile_wall_time_s": 0.335304, "reference_profile_wall_time_s": 0.0344, "cleanup_s": 0.001201, "eval_total_wall_time_s": 3.645288, "compile_time_s": 0.953455, "profile_time_s": 0.369704}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..18202c6991788beea1c1d11f57ec1d0504bc77d5
+--- /dev/null
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+@@ -0,0 +1,130 @@
++import torch
++import substrate
++import substrate.language as S
++
++
++@substrate.jit
++def gemm_mfma_32x32x8_bf16(
++    A: S.Tensor((64, 2), S.u32),
++    B: S.Tensor((64, 2), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    C[lane] = c_lane
++
++
++@substrate.jit
++def gemm_mfma_32x32x16_bf16(
++    A: S.Tensor((64, 4), S.u32),
++    B: S.Tensor((64, 4), S.u32),
++    C: S.Tensor((64, 16), S.f32),
++):
++    lane = S.thread_id(0)
++    c_lane = S.full((16,), 0.0, S.f32)
++    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.bf16))
++    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[1], m_b[1], c_lane)
++    C[lane] = c_lane
++
++
++def pack_a(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane] = mat[row, q * 4 : (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_a16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        row = lane % 32
++        q = lane // 32
++        vals[lane, 0:4] = mat[row, q * 4 : (q + 1) * 4]
++        vals[lane, 4:8] = mat[row, 8 + q * 4 : 8 + (q + 1) * 4]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def pack_b(mat):
++    vals = torch.zeros((64, 4), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        vals[lane, 0] = mat[q * 4 + 0, col]
++        vals[lane, 1] = mat[q * 4 + 1, col]
++        vals[lane, 2] = mat[q * 4 + 2, col]
++        vals[lane, 3] = mat[q * 4 + 3, col]
++    return vals.view(torch.int32).reshape(64, 2).cuda()
++
++
++def pack_b16(mat):
++    vals = torch.zeros((64, 8), dtype=torch.bfloat16)
++    for lane in range(64):
++        col = lane % 32
++        q = lane // 32
++        for i in range(4):
++            vals[lane, i] = mat[q * 4 + i, col]
++            vals[lane, 4 + i] = mat[8 + q * 4 + i, col]
++    return vals.view(torch.int32).reshape(64, 4).cuda()
++
++
++def run_case(r, c):
++    a = torch.zeros((32, 8), dtype=torch.bfloat16)
++    b = torch.zeros((8, 32), dtype=torch.bfloat16)
++    a[r, 0] = 1
++    b[0, c] = 1
++    ap = pack_a(a)
++    bp = pack_b(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x8_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("r", r, "c", c, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++def run_case16(r, c, k):
++    a = torch.zeros((32, 16), dtype=torch.bfloat16)
++    b = torch.zeros((16, 32), dtype=torch.bfloat16)
++    a[r, k] = 1
++    b[k, c] = 1
++    ap = pack_a16(a)
++    bp = pack_b16(b)
++    out = torch.zeros((64, 16), dtype=torch.float32, device="cuda")
++    gemm_mfma_32x32x16_bf16[lambda: ((1, 1, 1), (64, 1, 1))](ap, bp, out)
++    nz = (out.cpu() != 0).nonzero()
++    print("k16", r, c, k, "count", nz.shape[0])
++    for idx in nz.tolist():
++        i, j = idx
++        print(i, j, out[i, j].item())
++
++
++if __name__ == "__main__":
++    for r, c in [
++        (0, 0),
++        (0, 1),
++        (1, 0),
++        (2, 0),
++        (3, 0),
++        (0, 4),
++        (4, 0),
++        (5, 0),
++        (8, 0),
++        (12, 0),
++        (0, 16),
++        (16, 0),
++        (17, 0),
++        (20, 0),
++        (24, 0),
++        (31, 31),
++    ]:
++        run_case(r, c)
++    for r, c, k in [(0, 0, 0), (0, 0, 8), (0, 1, 12), (5, 7, 15)]:
++        run_case16(r, c, k)
+
+codex
+Correctness passed. I’m removing the temporary probe script now so the only round artifact I changed is the requested `output_model_new.py`.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/probe_mfma.py
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+
+codex
+Implemented the optimized kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py). It now uses a four-wave `64x64x16` tiled MFMA path with `S.amdgpu.mfma_32x32x8_bf16_f32`, vectorized global loads via `S.amdgpu.raw_buffer_load_x4`, LDS staging for both operands, and per-wave output offsets for the `2 x 2` wave grid. The forward path keeps weights/bias/add tensors cached by storage pointer so it stays cudagraph-safe without rebuilding device-side metadata each call.
+
+Validation passed with the required round-local command. The harness result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/debug_eval.jsonl) shows `compiled: true` and `correctness: true`.
+diff --git a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+index f6acc098c5a27a440d7ca80d211eeb020b571894..61c6983e604584ce3c97a9aa33d49b03935ab8f8
+--- a/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p95/optimization_rounds_no_invariants/round1/output_model_new.py
+@@ -2,45 +2,159 @@
+ import torch.nn as nn
+ import substrate
+ import substrate.language as S
+-SQRT_2 = 1.4142135623730951
+ 
+-def _launch():
+-    return ((1, 1, 1), (1, 1, 1))
++SQRT_2 = 1.4142135623730951
+ BATCH_SIZE = 1024
+ IN_FEATURES = 8192
+ OUT_FEATURES = 8192
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++WAVES_PER_BLOCK = 4
++THREADS_PER_BLOCK = WAVES_PER_BLOCK * 64
+ 
++
++def _launch():
++    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
++
++
+ @substrate.jit
+-def fused_kernel(X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16), W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16), BIAS0: S.Tensor((OUT_FEATURES,), S.bf16), ADDV: S.Tensor((OUT_FEATURES,), S.bf16), Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16)):
++def fused_kernel(
++    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
++    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
++    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
++    ADDV: S.Tensor((OUT_FEATURES,), S.bf16),
++    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
++):
++    tid = S.thread_id(0)
++    lane = tid % 64
++    wave = tid // 64
++    wave_row = wave // 2
++    wave_col = wave % 2
++    block_row = S.block_id(1)
++    block_col = S.block_id(0)
++    row_base = block_row * BLOCK_M
++    col_base = block_col * BLOCK_N
++
++    zero_i32 = S.convert(0, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
++    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(IN_FEATURES * OUT_FEATURES * 2, S.i32))
++
++    shared_a_words = S.make_shared((512,), S.u32)
++    shared_b_words = S.make_shared((512,), S.u32)
++    layout_words = S.make_layout((128, 4), (4, 1))
++    layout_vals = S.make_layout((128, 8), (8, 1))
++    a_words = S.view(shared_a_words, S.u32, layout_words)
++    b_words = S.view(shared_b_words, S.u32, layout_words)
++    a_vals = S.view(shared_a_words, S.bf16, layout_vals)
++    b_vals = S.view(shared_b_words, S.bf16, layout_vals)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, IN_FEATURES, BLOCK_K):
++        if tid < 128:
++            a_chunk = tid
++            a_row = a_chunk % BLOCK_M
++            a_seg = a_chunk // BLOCK_M
++            a_offset = S.convert(((row_base + a_row) * IN_FEATURES + k0 + a_seg * 8) * 2, S.i32)
++            a_packed = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero_i32, a_offset, 0)
++            a_frag = S.view(a_packed, S.Tensor((2, 4, 1), S.bf16))
++            a_wave_row = a_row // 32
++            a_lane_row = a_row % 32
++            a_chunk0 = a_wave_row * 64 + a_lane_row
++            a_chunk1 = a_wave_row * 64 + 32 + a_lane_row
++            a_slot = a_seg * 4
++            a_vals[a_chunk0, a_slot + 0] = a_frag[0, 0, 0]
++            a_vals[a_chunk0, a_slot + 1] = a_frag[0, 1, 0]
++            a_vals[a_chunk0, a_slot + 2] = a_frag[0, 2, 0]
++            a_vals[a_chunk0, a_slot + 3] = a_frag[0, 3, 0]
++            a_vals[a_chunk1, a_slot + 0] = a_frag[1, 0, 0]
++            a_vals[a_chunk1, a_slot + 1] = a_frag[1, 1, 0]
++            a_vals[a_chunk1, a_slot + 2] = a_frag[1, 2, 0]
++            a_vals[a_chunk1, a_slot + 3] = a_frag[1, 3, 0]
++        else:
++            b_chunk = tid - 128
++            b_k = b_chunk // 8
++            b_col_seg = b_chunk % 8
++            b_offset = S.convert(((k0 + b_k) * OUT_FEATURES + col_base + b_col_seg * 8) * 2, S.i32)
++            b_packed = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero_i32, b_offset, 0)
++            b_frag = S.view(b_packed, S.Tensor((2, 4, 1), S.bf16))
++            b_step = b_k // 8
++            b_q = (b_k % 8) // 4
++            b_slot = b_step * 4 + (b_k % 4)
++            for i in S.range(4):
++                b_col0 = b_col_seg * 8 + i
++                b_col1 = b_col_seg * 8 + 4 + i
++                b_wave_col0 = b_col0 // 32
++                b_wave_col1 = b_col1 // 32
++                b_lane_col0 = b_col0 % 32
++                b_lane_col1 = b_col1 % 32
++                b_vals[b_wave_col0 * 64 + b_q * 32 + b_lane_col0, b_slot] = b_frag[0, i, 0]
++                b_vals[b_wave_col1 * 64 + b_q * 32 + b_lane_col1, b_slot] = b_frag[1, i, 0]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[wave_row * 64 + lane]
++        b_lane_words = b_words[wave_col * 64 + lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
+     one = S.convert(1.0, S.f32)
+-    for i in S.range(BATCH_SIZE):
+-        for j in S.range(OUT_FEATURES):
+-            x = S.convert(0.0, S.f32)
+-            for kk in S.range(IN_FEATURES):
+-                x += S.convert(X[i, kk], S.f32) * S.convert(W[kk, j], S.f32)
+-            x = x + S.convert(BIAS0[j], S.f32) + S.convert(ADDV[j], S.f32)
+-            x = x * (one / (one + S.exp(-x)))
+-            x = S.tanh(x)
+-            x = S.convert(0.5, S.f32) * x * (one + S.erf(x / S.convert(SQRT_2, S.f32)))
+-            if x < S.convert(-1.0, S.f32):
+-                x = S.convert(-1.0, S.f32)
+-            if x > S.convert(1.0, S.f32):
+-                x = S.convert(1.0, S.f32)
+-            Y[i, j] = S.convert(x, S.bf16)
++    neg_one = S.convert(-1.0, S.f32)
++    half = S.convert(0.5, S.f32)
++    sqrt_2 = S.convert(SQRT_2, S.f32)
++    out_col = col_base + wave_col * 32 + (lane % 32)
++    bias_add = S.convert(BIAS0[out_col], S.f32) + S.convert(ADDV[out_col], S.f32)
++
++    for reg in S.range(16):
++        out_row = row_base + wave_row * 32 + (reg % 4) + (lane // 32) * 4 + (reg // 4) * 8
++        x = acc[reg] + bias_add
++        x = x * (one / (one + S.exp(-x)))
++        x = S.tanh(x)
++        x = half * x * (one + S.erf(x / sqrt_2))
++        if x < neg_one:
++            x = neg_one
++        if x > one:
++            x = one
++        Y[out_row, out_col] = S.convert(x, S.bf16)
++
+ 
+ class ModelNew(nn.Module):
+-
+     def __init__(self, in_features, out_features, add_value_shape):
+         super().__init__()
+         self.matmul = nn.Linear(in_features, out_features)
+         self.add_value = nn.Parameter(torch.randn(add_value_shape))
++        self._weight_cache = None
++        self._bias_cache = None
++        self._add_cache = None
++        self._weight_ptr = None
++        self._bias_ptr = None
++        self._add_ptr = None
+ 
++    def _cached_contiguous(self, tensor, cache_name, ptr_name, device, dtype):
++        src = tensor.to(device=device, dtype=dtype)
++        ptr = src.untyped_storage().data_ptr()
++        cached = getattr(self, cache_name)
++        if cached is None or getattr(self, ptr_name) != ptr:
++            cached = src.contiguous()
++            setattr(self, cache_name, cached)
++            setattr(self, ptr_name, ptr)
++        return cached
++
+     def forward(self, x):
+-        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.add_value.shape) != (OUT_FEATURES,):
+-            raise RuntimeError('This fused kernel only supports the benchmark input shape and dtype.')
+-        w_t = self.matmul.weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+-        bias = self.matmul.bias.to(device=x.device, dtype=x.dtype).contiguous()
+-        addv = self.add_value.to(device=x.device, dtype=x.dtype).contiguous()
++        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
++            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
++        if tuple(self.add_value.shape) != (OUT_FEATURES,):
++            raise RuntimeError("This fused kernel only supports the benchmark add tensor shape.")
++
++        x_in = x.contiguous()
++        w_t = self._cached_contiguous(self.matmul.weight.t(), "_weight_cache", "_weight_ptr", x.device, x.dtype)
++        bias = self._cached_contiguous(self.matmul.bias, "_bias_cache", "_bias_ptr", x.device, x.dtype)
++        addv = self._cached_contiguous(self.add_value, "_add_cache", "_add_ptr", x.device, x.dtype)
+         y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+-        fused_kernel[_launch](x.contiguous(), w_t, bias, addv, y)
++        fused_kernel[_launch](x_in, w_t, bias, addv, y)
+         return y
+
+tokens used
+54,761

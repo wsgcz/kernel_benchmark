@@ -1,0 +1,2867 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efd95-3c38-7240-b67a-cae85ba18925
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel and the nearest local MFMA example first, then I’ll move directly into `output_model_new.py` with a first implementation.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+M = 32768
+K = 32
+N = 32768
+
+BLOCK_M = 64
+BLOCK_N = 64
+WAVE_SIZE = 64
+WAVES_PER_BLOCK = 4
+THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+BF16_BYTES = 2
+
+
+@substrate.jit
+def gemm_kernel_mfma(
+    A: S.Tensor((32768, 32), S.bf16),
+    B: S.Tensor((32, 32768), S.bf16),
+    C: S.Tensor((32768, 32768), S.bf16),
+    a_range_bytes: S.i32,
+    b_range_bytes: S.i32,
+):
+    tid = S.thread_id(0)
+    lane = tid % WAVE_SIZE
+    warp = tid // WAVE_SIZE
+    warp_row = warp // 2
+    warp_col = warp % 2
+
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+
+    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+
+    zero = S.convert(0, S.i32)
+
+    a_linear = tid * 8
+    a_row = a_linear // K
+    a_col = a_linear % K
+    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+    for i in S.range(8):
+        shared_a[a_row, a_col + i] = a_vals[i]
+
+    b_linear = tid * 8
+    b_row = b_linear // BLOCK_N
+    b_col = b_linear % BLOCK_N
+    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+    for i in S.range(8):
+        shared_b[b_row, b_col + i] = b_vals[i]
+
+    S.syncthreads()
+
+    acc = S.full((16,), 0.0, S.f32)
+    wave_row = warp_row * 32
+    wave_col = warp_col * 32
+    lane_row = lane % 32
+    lane_col = lane % 32
+    lane_k8 = (lane // 32) * 8
+
+    for phase in S.range(2):
+        phase_k = phase * 16 + lane_k8
+        for i in S.range(8):
+            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
+
+        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+
+    out_col = block_col + wave_col + lane_col
+    row_group = (lane // 32) * 4
+    for i in S.range(16):
+        out_row = block_row + wave_row + (i // 4) * 8 + row_group + (i % 4)
+        C[out_row, out_col] = S.convert(acc[i], S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._launch = None
+        self._cached_ptrs = None
+
+    def _get_launch(self, A, B):
+        a_ptr = A.untyped_storage().data_ptr()
+        b_ptr = B.untyped_storage().data_ptr()
+        ptrs = (a_ptr, b_ptr)
+        if self._launch is None or self._cached_ptrs != ptrs:
+            self._cached_ptrs = ptrs
+            self._launch = gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))]
+        return self._launch
+
+    def forward(self, A, B):
+        A = A.contiguous()
+        B = B.contiguous()
+        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
+        launch = self._get_launch(A, B)
+        launch(
+            A,
+            B,
+            C,
+            A.numel() * A.element_size(),
+            B.numel() * B.element_size(),
+        )
+        return C
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+The starting kernel is a single-stage LDS path with one shared tile and no overlap. I’m reading the current `output_model_new.py` once, then I’ll patch in a double-buffered K-loop and fine-grain LDS/MFMA scheduling.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+M = 32768
+K = 32
+N = 32768
+
+BLOCK_M = 64
+BLOCK_N = 64
+WAVE_SIZE = 64
+WAVES_PER_BLOCK = 4
+THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+BF16_BYTES = 2
+
+
+@substrate.jit
+def gemm_kernel_mfma(
+    A: S.Tensor((32768, 32), S.bf16),
+    B: S.Tensor((32, 32768), S.bf16),
+    C: S.Tensor((32768, 32768), S.bf16),
+    a_range_bytes: S.i32,
+    b_range_bytes: S.i32,
+):
+    tid = S.thread_id(0)
+    lane = tid % WAVE_SIZE
+    warp = tid // WAVE_SIZE
+    warp_row = warp // 2
+    warp_col = warp % 2
+
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+
+    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+
+    zero = S.convert(0, S.i32)
+
+    a_linear = tid * 8
+    a_row = a_linear // K
+    a_col = a_linear % K
+    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+    for i in S.range(8):
+        shared_a[a_row, a_col + i] = a_vals[i]
+
+    b_linear = tid * 8
+    b_row = b_linear // BLOCK_N
+    b_col = b_linear % BLOCK_N
+    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+    for i in S.range(8):
+        shared_b[b_row, b_col + i] = b_vals[i]
+
+    S.syncthreads()
+
+    acc = S.full((16,), 0.0, S.f32)
+    wave_row = warp_row * 32
+    wave_col = warp_col * 32
+    lane_row = lane % 32
+    lane_col = lane % 32
+    lane_k8 = (lane // 32) * 8
+
+    for phase in S.range(2):
+        phase_k = phase * 16 + lane_k8
+        for i in S.range(8):
+            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
+
+        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+
+    out_col = block_col + wave_col + lane_col
+    row_group = (lane // 32) * 4
+    for i in S.range(16):
+        out_row = block_row + wave_row + (i // 4) * 8 + row_group + (i % 4)
+        C[out_row, out_col] = S.convert(acc[i], S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._launch = None
+        self._cached_ptrs = None
+
+    def _get_launch(self, A, B):
+        a_ptr = A.untyped_storage().data_ptr()
+        b_ptr = B.untyped_storage().data_ptr()
+        ptrs = (a_ptr, b_ptr)
+        if self._launch is None or self._cached_ptrs != ptrs:
+            self._cached_ptrs = ptrs
+            self._launch = gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))]
+        return self._launch
+
+    def forward(self, A, B):
+        A = A.contiguous()
+        B = B.contiguous()
+        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
+        launch = self._get_launch(A, B)
+        launch(
+            A,
+            B,
+            C,
+            A.numel() * A.element_size(),
+            B.numel() * B.element_size(),
+        )
+        return C
+
+codex
+I have enough context to implement, but I’m checking one narrow Substrate usage detail before patching: whether the DSL already uses a 16-byte LDS fragment pattern I can mirror directly instead of guessing the syntax.
+exec
+/bin/bash -lc "rg -n \"mfma_32x32x8_bf16_f32|raw_buffer_load_x4|make_shared\\(|view\\(.*u32|ds_read|shared_.*u32\" /workspace/substrate/test /workspace/substrate/python | head -n 80" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:53:    a_smem = S.make_shared((2, 2, 2, 16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:54:    b_smem = S.make_shared((2, 2, 2, 8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:55:    c_smem = S.make_shared((2, 2, 2, 2, 16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:30:    a_smem = S.make_shared((16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:31:    b_smem = S.make_shared((8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:32:    c_smem = S.make_shared((16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:24:    shared_buf = S.make_shared((GLOBAL_SIZE,), S.i32)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:35:    shared_buf = S.make_shared((4,), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:15:    shared_buf = S.make_shared((32,), S.i32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:32:    shared_buf = S.make_shared((16, 16), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:49:    shared_buf = S.make_shared((32,), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:69:    shared_words = S.make_shared((16,), S.u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:73:    left = S.view(left_words, S.u32, layout)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:74:    right = S.view(right_words, S.u32, layout)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:90:    shared_words = S.make_shared((32,), S.u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:102:    q_u32 = S.view(q_words, S.u32, layout_u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:103:    kv_u32 = S.view(kv_words, S.u32, layout_u32)
+
+exec
+/bin/bash -lc "sed -n '60,130p' /workspace/substrate/test/primitives/memory/test_shared_memory.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+        S.syncthreads()
+        stride = stride >> 0x1
+
+    if thread_id == 0:
+        result[0] = shared_buf[0]
+
+
+@substrate.jit
+def kernel_shm_subview_view_offsets(result: S.Tensor((2,), S.u32)):
+    shared_words = S.make_shared((16,), S.u32)
+    left_words = S.subview(shared_words, (0,), (8,), (1,))
+    right_words = S.subview(shared_words, (8,), (8,), (1,))
+    layout = S.make_layout((2, 2), (2, 1))
+    left = S.view(left_words, S.u32, layout)
+    right = S.view(right_words, S.u32, layout)
+
+    tid = S.thread_id(0)
+    if tid == 0:
+        left[0, 0] = S.convert(11, S.u32)
+        right[0, 0] = S.convert(22, S.u32)
+
+    S.syncthreads()
+
+    if tid == 0:
+        result[0] = left[0, 0]
+        result[1] = right[0, 0]
+
+
+@substrate.jit
+def kernel_shm_subview_view_mixed_types(result: S.Tensor((4,), S.i32)):
+    shared_words = S.make_shared((32,), S.u32)
+    stats_words = S.subview(shared_words, (0,), (8,), (1,))
+    q_words = S.subview(shared_words, (8,), (8,), (1,))
+    kv_words = S.subview(shared_words, (16,), (8,), (1,))
+    score_words = S.subview(shared_words, (24,), (8,), (1,))
+    layout_f32 = S.make_layout((2, 4), (4, 1))
+    layout_bf16 = S.make_layout((2, 4), (4, 1))
+    layout_u32 = S.make_layout((2, 2), (2, 1))
+    stats = S.view(stats_words, S.f32, layout_f32)
+    q = S.view(q_words, S.bf16, layout_bf16)
+    kv = S.view(kv_words, S.bf16, layout_bf16)
+    score = S.view(score_words, S.f32, layout_f32)
+    q_u32 = S.view(q_words, S.u32, layout_u32)
+    kv_u32 = S.view(kv_words, S.u32, layout_u32)
+
+    tid = S.thread_id(0)
+    if tid == 0:
+        stats[0, 0] = S.convert(3.0, S.f32)
+        score[0, 0] = S.convert(4.0, S.f32)
+        q[0, 0] = S.convert(1.0, S.bf16)
+        q[0, 1] = S.convert(2.0, S.bf16)
+        kv[0, 0] = S.convert(3.0, S.bf16)
+        kv[0, 1] = S.convert(4.0, S.bf16)
+
+    S.syncthreads()
+
+    if tid == 0:
+        result[0] = S.convert(stats[0, 0], S.i32)
+        result[1] = q_u32[0, 0]
+        result[2] = kv_u32[0, 0]
+        result[3] = S.convert(score[0, 0], S.i32)
+
+
+class TestSharedMemoryOps(unittest.TestCase):
+    def test_basic_shared_memory(self):
+        """Test basic shared memory read/write functionality"""
+        input_data = torch.arange(32, dtype=torch.int32, device="cuda")
+        output_data = torch.zeros(32, dtype=torch.int32, device="cuda")
+
+        expected = torch.cat([input_data[1:], input_data[0:1]])
+
+
+exec
+/bin/bash -lc "sed -n '1,180p' /workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_cuda_nvidia
+
+
+@substrate.jit
+def gemm_2stages_pipeline(
+    A: S.Tensor((128, 128), S.f16),
+    B: S.Tensor((128, 128), S.f16),
+    C: S.Tensor((128, 128), S.f16),
+):
+    MMA_M = 16
+    MMA_N = 8
+    MMA_K = 16
+
+    WARP_SIZE = 32
+
+    # Work group configuration
+    WARPS_M = 2  # Number of warps in M dimension per work group
+    WARPS_N = 2  # Number of warps in N dimension per work group
+
+    # Each warp computes multiple MMA tiles
+    MMA_TILES_M = 2  # Number of MMA tiles per warp in M dimension
+    MMA_TILES_N = 2  # Number of MMA tiles per warp in N dimension
+
+    # Block size
+    BLOCK_M = WARPS_M * MMA_TILES_M * MMA_M  # Total M covered by work group
+    BLOCK_N = WARPS_N * MMA_TILES_N * MMA_N  # Total N covered by work group
+
+    K_tiles = 8  # 128 // 16
+
+    # =========================================== #
+
+    # Work group and warp identification
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    thread_id = S.thread_id(0)
+    warp_id = thread_id >> 5  # thread_id // WARP_SIZE
+    lane_id = thread_id % WARP_SIZE
+
+    warp_row_id = warp_id >> 1  # warp_id // WARPS_N
+    warp_col_id = warp_id % WARPS_N
+
+    # Shared memory: [stage][warp_row][warp_col][local_row][local_col]
+    # A: [2][WARPS_M][MMA_TILES_M][MMA_M][MMA_K]
+    # B: [2][WARPS_N][MMA_TILES_N][MMA_N][MMA_K]
+    a_smem = S.make_shared((2, 2, 2, 16, 16), S.f16)
+    b_smem = S.make_shared((2, 2, 2, 8, 16), S.f16)
+    c_smem = S.make_shared((2, 2, 2, 2, 16, 8), S.f16)
+
+    # Accumulators for each MMA tile this warp computes
+    RC = S.make_local((2, 2, 4), S.f16)
+
+    for tm in S.range(MMA_TILES_M):
+        for tn in S.range(MMA_TILES_N):
+            for i in S.range(4):
+                RC[tm, tn, i] = S.convert(0, S.f16)
+
+    # Precompute addressing for A and B loads
+    row_a = lane_id >> 1
+    col_a = (lane_id & 1) * 8
+    row_b = (lane_id % (MMA_N * 2)) >> 1
+    col_b = ((lane_id % (MMA_N * 2)) & 1) * 8
+
+    # Stage 0: Prefetch first tile (k_tile = 0) into buffer 0
+    write_stage = 0
+    for tm in S.range(MMA_TILES_M):
+        for j in S.range(8):
+            global_row = block_row + warp_row_id * (MMA_TILES_M * MMA_M) + tm * MMA_M + row_a
+            global_col = col_a + j
+            a_smem[write_stage, warp_row_id, tm, row_a, col_a + j] = A[global_row, global_col]
+
+    for tn in S.range(MMA_TILES_N):
+        for j in S.range(8):
+            global_row = col_b + j
+            global_col = block_col + warp_col_id * (MMA_TILES_N * MMA_N) + tn * MMA_N + row_b
+            b_smem[write_stage, warp_col_id, tn, row_b, col_b + j] = B[global_row, global_col]
+
+    S.syncthreads()
+
+    # Main pipeline loop
+    for k_tile in S.range(K_tiles - 1):
+        read_stage = k_tile & 1
+        write_stage = 1 - read_stage
+
+        # Prefetch next tile
+        next_k = k_tile + 1
+        for tm in S.range(MMA_TILES_M):
+            for j in S.range(8):
+                global_row = block_row + warp_row_id * (MMA_TILES_M * MMA_M) + tm * MMA_M + row_a
+                global_col = next_k * MMA_K + col_a + j
+                a_smem[write_stage, warp_row_id, tm, row_a, col_a + j] = A[global_row, global_col]
+
+        for tn in S.range(MMA_TILES_N):
+            for j in S.range(8):
+                global_row = next_k * MMA_K + col_b + j
+                global_col = block_col + warp_col_id * (MMA_TILES_N * MMA_N) + tn * MMA_N + row_b
+                b_smem[write_stage, warp_col_id, tn, row_b, col_b + j] = B[global_row, global_col]
+
+        # Compute all MMA tiles for this warp
+        for tm in S.range(MMA_TILES_M):
+            for tn in S.range(MMA_TILES_N):
+                # Load A tile
+                a_row_offset = lane_id % 16
+                a_col_offset = (lane_id >> 4) * 8
+                a_smem_tile = S.subview(a_smem, (read_stage, warp_row_id, tm, 0, 0), (1, 1, 1, 16, 16), (1, 1, 1, 1, 1))
+                a_tile_2d = S.subview(a_smem_tile, (a_row_offset, a_col_offset), (8, 8), (1, 1))
+                RA = S.nvvm.ldmatrix_m8n8_x4_b16(a_tile_2d)
+
+                # Load B tile
+                b_row_offset = lane_id % 8
+                b_col_offset = ((lane_id >> 3) & 1) * 8
+                b_smem_tile = S.subview(b_smem, (read_stage, warp_col_id, tn, 0, 0), (1, 1, 1, 8, 16), (1, 1, 1, 1, 1))
+                b_tile_2d = S.subview(b_smem_tile, (b_row_offset, b_col_offset), (8, 8), (1, 1))
+                RB = S.nvvm.ldmatrix_m8n8_x2_b16(b_tile_2d)
+
+                # MMA
+                RC_view = S.subview(RC, (tm, tn, 0), (1, 1, 4), (1, 1, 1))
+                RC_result = S.nvvm.mma_16x8x16_f16_f16(RA, RB, RC_view)
+
+                # Store back to RC
+                for i in S.range(4):
+                    RC[tm, tn, i] = RC_result[i]
+
+        S.syncthreads()
+
+    # Handle the last k_tile
+    last_stage = (K_tiles - 1) & 1
+
+    for tm in S.range(MMA_TILES_M):
+        for tn in S.range(MMA_TILES_N):
+            # Load A tile
+            a_row_offset = lane_id % 16
+            a_col_offset = (lane_id >> 4) * 8
+            a_smem_tile_last = S.subview(
+                a_smem, (last_stage, warp_row_id, tm, 0, 0), (1, 1, 1, 16, 16), (1, 1, 1, 1, 1)
+            )
+            a_tile_2d_last = S.subview(a_smem_tile_last, (a_row_offset, a_col_offset), (8, 8), (1, 1))
+            RA = S.nvvm.ldmatrix_m8n8_x4_b16(a_tile_2d_last)
+
+            # Load B tile
+            b_row_offset = lane_id % 8
+            b_col_offset = ((lane_id >> 3) & 1) * 8
+            b_smem_tile_last = S.subview(b_smem, (last_stage, warp_col_id, tn, 0, 0), (1, 1, 1, 8, 16), (1, 1, 1, 1, 1))
+            b_tile_2d_last = S.subview(b_smem_tile_last, (b_row_offset, b_col_offset), (8, 8), (1, 1))
+            RB = S.nvvm.ldmatrix_m8n8_x2_b16(b_tile_2d_last)
+
+            # MMA
+            RC_view = S.subview(RC, (tm, tn, 0), (1, 1, 4), (1, 1, 1))
+            RC_result = S.nvvm.mma_16x8x16_f16_f16(RA, RB, RC_view)
+
+            # Store back to RC
+            for i in S.range(4):
+                RC[tm, tn, i] = RC_result[i]
+
+    S.syncthreads()
+
+    # Store results to shared memory
+    row1 = lane_id >> 2
+    col1 = (lane_id & 3) * 2
+
+    for tm in S.range(MMA_TILES_M):
+        for tn in S.range(MMA_TILES_N):
+            c_smem[warp_row_id, warp_col_id, tm, tn, row1, col1] = RC[tm, tn, 0]
+            c_smem[warp_row_id, warp_col_id, tm, tn, row1, col1 + 1] = RC[tm, tn, 1]
+            c_smem[warp_row_id, warp_col_id, tm, tn, row1 + 8, col1] = RC[tm, tn, 2]
+            c_smem[warp_row_id, warp_col_id, tm, tn, row1 + 8, col1 + 1] = RC[tm, tn, 3]
+
+    S.syncthreads()
+
+    # Write results to global memory
+    for tm in S.range(MMA_TILES_M):
+        for tn in S.range(MMA_TILES_N):
+            for j in S.range(MMA_N):
+
+codex
+I’m patching the kernel now. The change is focused: two-stage LDS buffers, a single-iteration pipelined prefetch for the second K-stage, and split LDS fragment consumption around the prefetch/store to create a real software pipeline without changing the per-wave MFMA mapping.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+deleted file mode 100644
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ /dev/null
+@@ -1,119 +0,0 @@
+-import torch
+-import torch.nn as nn
+-
+-import substrate
+-import substrate.language as S
+-
+-
+-M = 32768
+-K = 32
+-N = 32768
+-
+-BLOCK_M = 64
+-BLOCK_N = 64
+-WAVE_SIZE = 64
+-WAVES_PER_BLOCK = 4
+-THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+-BF16_BYTES = 2
+-
+-
+-@substrate.jit
+-def gemm_kernel_mfma(
+-    A: S.Tensor((32768, 32), S.bf16),
+-    B: S.Tensor((32, 32768), S.bf16),
+-    C: S.Tensor((32768, 32768), S.bf16),
+-    a_range_bytes: S.i32,
+-    b_range_bytes: S.i32,
+-):
+-    tid = S.thread_id(0)
+-    lane = tid % WAVE_SIZE
+-    warp = tid // WAVE_SIZE
+-    warp_row = warp // 2
+-    warp_col = warp % 2
+-
+-    block_row = S.block_id(1) * BLOCK_M
+-    block_col = S.block_id(0) * BLOCK_N
+-
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-
+-    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+-    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+-    zero = S.convert(0, S.i32)
+-
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
+-
+-    S.syncthreads()
+-
+-    acc = S.full((16,), 0.0, S.f32)
+-    wave_row = warp_row * 32
+-    wave_col = warp_col * 32
+-    lane_row = lane % 32
+-    lane_col = lane % 32
+-    lane_k8 = (lane // 32) * 8
+-
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
+-
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+-
+-    out_col = block_col + wave_col + lane_col
+-    row_group = (lane // 32) * 4
+-    for i in S.range(16):
+-        out_row = block_row + wave_row + (i // 4) * 8 + row_group + (i % 4)
+-        C[out_row, out_col] = S.convert(acc[i], S.bf16)
+-
+-
+-class ModelNew(nn.Module):
+-    def __init__(self):
+-        super().__init__()
+-        self._launch = None
+-        self._cached_ptrs = None
+-
+-    def _get_launch(self, A, B):
+-        a_ptr = A.untyped_storage().data_ptr()
+-        b_ptr = B.untyped_storage().data_ptr()
+-        ptrs = (a_ptr, b_ptr)
+-        if self._launch is None or self._cached_ptrs != ptrs:
+-            self._cached_ptrs = ptrs
+-            self._launch = gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))]
+-        return self._launch
+-
+-    def forward(self, A, B):
+-        A = A.contiguous()
+-        B = B.contiguous()
+-        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
+-        launch = self._get_launch(A, B)
+-        launch(
+-            A,
+-            B,
+-            C,
+-            A.numel() * A.element_size(),
+-            B.numel() * B.element_size(),
+-        )
+-        return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+deleted file mode 100644
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ /dev/null
+@@ -1,119 +0,0 @@
+-import torch
+-import torch.nn as nn
+-
+-import substrate
+-import substrate.language as S
+-
+-
+-M = 32768
+-K = 32
+-N = 32768
+-
+-BLOCK_M = 64
+-BLOCK_N = 64
+-WAVE_SIZE = 64
+-WAVES_PER_BLOCK = 4
+-THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+-BF16_BYTES = 2
+-
+-
+-@substrate.jit
+-def gemm_kernel_mfma(
+-    A: S.Tensor((32768, 32), S.bf16),
+-    B: S.Tensor((32, 32768), S.bf16),
+-    C: S.Tensor((32768, 32768), S.bf16),
+-    a_range_bytes: S.i32,
+-    b_range_bytes: S.i32,
+-):
+-    tid = S.thread_id(0)
+-    lane = tid % WAVE_SIZE
+-    warp = tid // WAVE_SIZE
+-    warp_row = warp // 2
+-    warp_col = warp % 2
+-
+-    block_row = S.block_id(1) * BLOCK_M
+-    block_col = S.block_id(0) * BLOCK_N
+-
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-
+-    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+-    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+-    zero = S.convert(0, S.i32)
+-
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
+-
+-    S.syncthreads()
+-
+-    acc = S.full((16,), 0.0, S.f32)
+-    wave_row = warp_row * 32
+-    wave_col = warp_col * 32
+-    lane_row = lane % 32
+-    lane_col = lane % 32
+-    lane_k8 = (lane // 32) * 8
+-
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
+-
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+-
+-    out_col = block_col + wave_col + lane_col
+-    row_group = (lane // 32) * 4
+-    for i in S.range(16):
+-        out_row = block_row + wave_row + (i // 4) * 8 + row_group + (i % 4)
+-        C[out_row, out_col] = S.convert(acc[i], S.bf16)
+-
+-
+-class ModelNew(nn.Module):
+-    def __init__(self):
+-        super().__init__()
+-        self._launch = None
+-        self._cached_ptrs = None
+-
+-    def _get_launch(self, A, B):
+-        a_ptr = A.untyped_storage().data_ptr()
+-        b_ptr = B.untyped_storage().data_ptr()
+-        ptrs = (a_ptr, b_ptr)
+-        if self._launch is None or self._cached_ptrs != ptrs:
+-            self._cached_ptrs = ptrs
+-            self._launch = gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))]
+-        return self._launch
+-
+-    def forward(self, A, B):
+-        A = A.contiguous()
+-        B = B.contiguous()
+-        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
+-        launch = self._get_launch(A, B)
+-        launch(
+-            A,
+-            B,
+-            C,
+-            A.numel() * A.element_size(),
+-            B.numel() * B.element_size(),
+-        )
+-        return C
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..84ac2d33d4fd90f5578a0f3435aaaa9048c8c0c8
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..84ac2d33d4fd90f5578a0f3435aaaa9048c8c0c8
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+codex
+The first pipelined version is in place. I’m running the exact round-local evaluation command now and will only make fixes driven by the concrete failure, if any.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..84ac2d33d4fd90f5578a0f3435aaaa9048c8c0c8
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+ exited 1 in 2515ms:
+/tmp/tmp3lkoair4.py:104:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  104 |             shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
+      |             ^
+/tmp/tmp3lkoair4.py:107:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  107 |             shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
+      |             ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+codex
+The harness is still running. I’m waiting for the first concrete result before touching the kernel again.
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..84ac2d33d4fd90f5578a0f3435aaaa9048c8c0c8
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+codex
+The failure is narrow: the compiler rejected storing a reused `S.view(...)` value after the MFMA step. I’m keeping the pipeline structure and only re-materializing the view at the store site.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..d5e1ca1598c2cec9fb41191d5e7d2176a1da19a9
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..d5e1ca1598c2cec9fb41191d5e7d2176a1da19a9
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..d5e1ca1598c2cec9fb41191d5e7d2176a1da19a9
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+ exited 1 in 2581ms:
+/tmp/tmpu1n5e_ka.py:101:23: error: Unimplemented: 'Failed to generate memref argument for view()'
+  101 |         next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
+      |                       ^
+/tmp/tmpu1n5e_ka.py:101:9: error: Unimplemented: 'Failed to generate expression for assignment'
+  101 |         next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
+      |         ^
+/tmp/tmpu1n5e_ka.py:103:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  103 |             shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
+      |             ^
+/tmp/tmpu1n5e_ka.py:105:23: error: Unimplemented: 'Failed to generate memref argument for view()'
+  105 |         next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
+      |                       ^
+/tmp/tmpu1n5e_ka.py:105:9: error: Unimplemented: 'Failed to generate expression for assignment'
+  105 |         next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
+      |         ^
+/tmp/tmpu1n5e_ka.py:107:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  107 |             shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
+      |             ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..d5e1ca1598c2cec9fb41191d5e7d2176a1da19a9
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,34 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
+-
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +75,49 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
++    if tid < A_LOAD_THREADS:
++        next_a_linear = tid * 8
++        next_a_row = next_a_linear // STAGE_K
++        next_a_col = next_a_linear % STAGE_K
++        next_a_offset = ((block_row + next_a_row) * K + STAGE_K + next_a_col) * BF16_BYTES
++        next_a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(next_a_offset, S.i32), 0)
++    else:
++        next_b_tid = tid - A_LOAD_THREADS
++        next_b_linear = next_b_tid * 8
++        next_b_row = next_b_linear // BLOCK_N
++        next_b_col = next_b_linear % BLOCK_N
++        next_b_offset = ((STAGE_K + next_b_row) * N + block_col + next_b_col) * BF16_BYTES
++        next_b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(next_b_offset, S.i32), 0)
++
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
++
++    if tid < A_LOAD_THREADS:
++        next_a_vals = S.view(next_a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, next_a_row, next_a_col + i] = next_a_vals[i]
++    else:
++        next_b_vals = S.view(next_b_pack, S.Tensor((8,), S.bf16))
+         for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++            shared_b[1, next_b_row, next_b_col + i] = next_b_vals[i]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    S.syncthreads()
++
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+codex
+The compiler limitation is specific to keeping a buffer-load packet live across later LDS stores. I’m switching to a compile-safe variant that still keeps double buffers and pipelines LDS fragment fetches against MFMA, which is the part this DSL supports cleanly here.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..3f20bf02a6f8df72d64dedf2b5fb0bbb90f5ca4a
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,54 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + STAGE_K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = ((STAGE_K + b_row) * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[1, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +95,24 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..3f20bf02a6f8df72d64dedf2b5fb0bbb90f5ca4a
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,54 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + STAGE_K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = ((STAGE_K + b_row) * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[1, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +95,24 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..3f20bf02a6f8df72d64dedf2b5fb0bbb90f5ca4a
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,54 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + STAGE_K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = ((STAGE_K + b_row) * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[1, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +95,24 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..3f20bf02a6f8df72d64dedf2b5fb0bbb90f5ca4a
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,54 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + STAGE_K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = ((STAGE_K + b_row) * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[1, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +95,24 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+ succeeded in 4819ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+codex
+The harness completed successfully. I’m checking the round-local `debug_eval.jsonl` once to confirm the recorded correctness result and performance fields before I stop.
+exec
+/bin/bash -lc "sed -n '1,120p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782371073.173692, "run_ended_at": 1782371075.927585, "run_wall_time_s": 2.753892, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 3.9, "ref_runtime_us": 0.768, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782371073.17379, "event_type": "eval_start"}, {"timestamp": 1782371073.173848, "event_type": "load_reference_model_start"}, {"timestamp": 1782371073.174812, "event_type": "load_reference_model_end", "duration_s": 0.000959}, {"timestamp": 1782371073.174818, "event_type": "custom_model_import_start"}, {"timestamp": 1782371073.232244, "event_type": "custom_model_import_end", "duration_s": 0.057413}, {"timestamp": 1782371073.232253, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371073.232619, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000362}, {"timestamp": 1782371073.232622, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371074.24819, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.015557}, {"timestamp": 1782371074.248195, "event_type": "correctness_check_start"}, {"timestamp": 1782371075.64329, "event_type": "correctness_check_end", "duration_s": 1.395073}, {"timestamp": 1782371075.654179, "event_type": "candidate_profile_start"}, {"timestamp": 1782371075.849288, "event_type": "candidate_profile_end", "duration_s": 0.195087}, {"timestamp": 1782371075.860434, "event_type": "reference_profile_start"}, {"timestamp": 1782371075.926648, "event_type": "reference_profile_end", "duration_s": 0.066199}, {"timestamp": 1782371075.926839, "event_type": "cleanup_start"}, {"timestamp": 1782371075.927454, "event_type": "cleanup_end", "duration_s": 0.000609}, {"timestamp": 1782371075.927458, "event_type": "eval_end", "duration_s": 2.753667}], "load_reference_model_s": 0.000959, "custom_model_import_compile_s": 0.057413, "instantiate_and_to_device_s": 0.000362, "first_candidate_invocation_s": 1.015557, "correctness_check_s": 1.395073, "candidate_profile_wall_time_s": 0.195087, "reference_profile_wall_time_s": 0.066199, "cleanup_s": 0.000609, "eval_total_wall_time_s": 2.753667, "compile_time_s": 1.07297, "profile_time_s": 0.261286}}, "runtime_stats": {"mean": 3.9, "std": 0.0, "min": 3.9, "max": 3.9, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.768, "std": 0.0, "min": 0.768, "max": 0.768, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782371073.17379, "event_type": "eval_start"}, {"timestamp": 1782371073.173848, "event_type": "load_reference_model_start"}, {"timestamp": 1782371073.174812, "event_type": "load_reference_model_end", "duration_s": 0.000959}, {"timestamp": 1782371073.174818, "event_type": "custom_model_import_start"}, {"timestamp": 1782371073.232244, "event_type": "custom_model_import_end", "duration_s": 0.057413}, {"timestamp": 1782371073.232253, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371073.232619, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000362}, {"timestamp": 1782371073.232622, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371074.24819, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.015557}, {"timestamp": 1782371074.248195, "event_type": "correctness_check_start"}, {"timestamp": 1782371075.64329, "event_type": "correctness_check_end", "duration_s": 1.395073}, {"timestamp": 1782371075.654179, "event_type": "candidate_profile_start"}, {"timestamp": 1782371075.849288, "event_type": "candidate_profile_end", "duration_s": 0.195087}, {"timestamp": 1782371075.860434, "event_type": "reference_profile_start"}, {"timestamp": 1782371075.926648, "event_type": "reference_profile_end", "duration_s": 0.066199}, {"timestamp": 1782371075.926839, "event_type": "cleanup_start"}, {"timestamp": 1782371075.927454, "event_type": "cleanup_end", "duration_s": 0.000609}, {"timestamp": 1782371075.927458, "event_type": "eval_end", "duration_s": 2.753667}], "load_reference_model_s": 0.000959, "custom_model_import_compile_s": 0.057413, "instantiate_and_to_device_s": 0.000362, "first_candidate_invocation_s": 1.015557, "correctness_check_s": 1.395073, "candidate_profile_wall_time_s": 0.195087, "reference_profile_wall_time_s": 0.066199, "cleanup_s": 0.000609, "eval_total_wall_time_s": 2.753667, "compile_time_s": 1.07297, "profile_time_s": 0.261286}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..3f20bf02a6f8df72d64dedf2b5fb0bbb90f5ca4a
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,54 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + STAGE_K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = ((STAGE_K + b_row) * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[1, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +95,24 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+codex
+Implemented the optimized kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py). The kernel keeps the 4-wave `2 x 2` warp grid and MFMA mapping, stages A/B through double-buffered LDS, and pipelines split 16-byte operand fragment loads from LDS against the two natural `mfma_32x32x8_bf16_f32` steps.
+
+Validation passed with the exact required harness command. The recorded result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/debug_eval.jsonl) shows `compiled: true`, `correctness: true`, and `runtime_us: 3.9`.
+diff --git a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+index 085f31aec6e8393840bce2cfb9bfcd9791a0e062..3f20bf02a6f8df72d64dedf2b5fb0bbb90f5ca4a
+--- a/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p09/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -11,10 +11,13 @@
+ 
+ BLOCK_M = 64
+ BLOCK_N = 64
++STAGE_K = 16
+ WAVE_SIZE = 64
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = WAVE_SIZE * WAVES_PER_BLOCK
+ BF16_BYTES = 2
++A_LOAD_THREADS = 128
++B_LOAD_THREADS = 128
+ 
+ 
+ @substrate.jit
+@@ -34,33 +37,54 @@
+     block_row = S.block_id(1) * BLOCK_M
+     block_col = S.block_id(0) * BLOCK_N
+ 
+-    shared_a = S.make_shared((BLOCK_M, K), S.bf16)
+-    shared_b = S.make_shared((K, BLOCK_N), S.bf16)
+-    scratch_a = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
+-    scratch_b = S.make_shared((THREADS_PER_BLOCK, 8), S.bf16)
++    shared_a = S.make_shared((2, BLOCK_M, STAGE_K), S.bf16)
++    shared_b = S.make_shared((2, STAGE_K, BLOCK_N), S.bf16)
++    scratch_a = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
++    scratch_b = S.make_shared((2, THREADS_PER_BLOCK, 8), S.bf16)
+ 
+     a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
+     b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
+-
+     zero = S.convert(0, S.i32)
+ 
+-    a_linear = tid * 8
+-    a_row = a_linear // K
+-    a_col = a_linear % K
+-    a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
+-    a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
+-    a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_a[a_row, a_col + i] = a_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[0, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[0, b_row, b_col + i] = b_vals[i]
+ 
+-    b_linear = tid * 8
+-    b_row = b_linear // BLOCK_N
+-    b_col = b_linear % BLOCK_N
+-    b_offset = (b_row * N + block_col + b_col) * BF16_BYTES
+-    b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
+-    b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
+-    for i in S.range(8):
+-        shared_b[b_row, b_col + i] = b_vals[i]
++    if tid < A_LOAD_THREADS:
++        a_linear = tid * 8
++        a_row = a_linear // STAGE_K
++        a_col = a_linear % STAGE_K
++        a_offset = ((block_row + a_row) * K + STAGE_K + a_col) * BF16_BYTES
++        a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, S.convert(a_offset, S.i32), 0)
++        a_vals = S.view(a_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_a[1, a_row, a_col + i] = a_vals[i]
++    else:
++        b_tid = tid - A_LOAD_THREADS
++        b_linear = b_tid * 8
++        b_row = b_linear // BLOCK_N
++        b_col = b_linear % BLOCK_N
++        b_offset = ((STAGE_K + b_row) * N + block_col + b_col) * BF16_BYTES
++        b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, S.convert(b_offset, S.i32), 0)
++        b_vals = S.view(b_pack, S.Tensor((8,), S.bf16))
++        for i in S.range(8):
++            shared_b[1, b_row, b_col + i] = b_vals[i]
+ 
+     S.syncthreads()
+ 
+@@ -71,16 +95,24 @@
+     lane_col = lane % 32
+     lane_k8 = (lane // 32) * 8
+ 
+-    for phase in S.range(2):
+-        phase_k = phase * 16 + lane_k8
+-        for i in S.range(8):
+-            scratch_a[tid, i] = shared_a[wave_row + lane_row, phase_k + i]
+-            scratch_b[tid, i] = shared_b[phase_k + i, wave_col + lane_col]
++    for i in S.range(8):
++        scratch_a[0, tid, i] = shared_a[0, wave_row + lane_row, lane_k8 + i]
++        scratch_b[0, tid, i] = shared_b[0, lane_k8 + i, wave_col + lane_col]
++
++    a_frag0 = S.view(scratch_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag0 = S.view(scratch_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+ 
+-        a_frag = S.view(scratch_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(scratch_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++    for i in S.range(8):
++        scratch_a[1, tid, i] = shared_a[1, wave_row + lane_row, lane_k8 + i]
++        scratch_b[1, tid, i] = shared_b[1, lane_k8 + i, wave_col + lane_col]
++
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
++
++    a_frag1 = S.view(scratch_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    b_frag1 = S.view(scratch_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+ 
+     out_col = block_col + wave_col + lane_col
+     row_group = (lane // 32) * 4
+
+tokens used
+82,700

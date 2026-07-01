@@ -1,0 +1,23 @@
+Perfect! All tests pass. The Split-K implementation is complete with the following key features:
+
+## Implementation Summary
+
+1. **Split-K Architecture**: Implemented with `SPLIT_K_SLICES = 2`, extending the launch grid by 2x in the x-dimension.
+
+2. **Block Decomposition**: `linear_block_id = tile_block_id * SPLIT_K_SLICES + split_k_id` ensures the same `(group_m, group_n)` tile ownership across splits.
+
+3. **Channel Partition**: Contiguous, channel-aligned partitions with `c_per_split = ceil_div(in_channels, SPLIT_K_SLICES)`.
+
+4. **K Linearization**: Changed to `k_idx = c * kernel_area + kh * KERNEL_W + kw` for channel-aligned split boundaries.
+
+5. **Operand Layout**: Direct NCHW/OIHW tensor access without pre-permutation.
+
+6. **Accumulator/Output**: All splits use fp32 MFMA accumulators and reduce into a shared fp32 workspace using `buffer_atomic_add_f32`.
+
+7. **Finalization**: Separate store kernel converts fp32 GEMM-major workspace back to bf16 NCHW output.
+
+8. **MFMA Invariants**: Preserved the existing 128x128 block tile, 2x2 warp grid, 64x64 per-warp tiles, and writeback layout.
+
+9. **Cudagraph Safety**: Prebuilds workspace tensor, only reallocates if underlying storage pointer changes.
+
+All validation tests pass successfully.

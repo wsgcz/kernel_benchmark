@@ -1,0 +1,931 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efe87-b9c8-7970-876b-9477d4fde78c
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel and the nearest local MFMA example first, then I’ll move straight into editing `output_model_new.py` and validate with the provided round-local command.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+SQRT_2 = 1.4142135623730951
+BATCH_SIZE = 2048
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+ROWS_PER_BLOCK = 4
+THREADS_PER_BLOCK = 256
+X_NUMEL = BATCH_SIZE * IN_FEATURES
+X_RANGE_BYTES = X_NUMEL * 2
+W_RANGE_BYTES = IN_FEATURES * 2
+
+
+def _launch():
+    return ((BATCH_SIZE // ROWS_PER_BLOCK, 1, 1), (THREADS_PER_BLOCK, 1, 1))
+
+
+@substrate.jit
+def fused_kernel(
+    X: S.Tensor((X_NUMEL,), S.bf16),
+    WMEAN: S.Tensor((IN_FEATURES,), S.bf16),
+    BIAS_SUB_MEAN: S.Tensor((1,), S.f32),
+    Y: S.Tensor((X_NUMEL,), S.bf16),
+):
+    tid = S.thread_id(0)
+    lane = tid & 63
+    warp = tid >> 6
+    warp_row = warp >> 1
+    warp_col = warp & 1
+    row = S.block_id(0) * ROWS_PER_BLOCK + warp_row * 2 + warp_col
+
+    x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+    w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+    zero = S.convert(0, S.i32)
+    acc = S.full((16,), 0.0, S.f32)
+
+    for k_base in S.range(0, IN_FEATURES, 16):
+        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+        w_offset = S.convert(k_base * 2, S.i32)
+        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+        S.syncthreads()
+
+        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
+        S.syncthreads()
+
+    mean = acc[0] + BIAS_SUB_MEAN[0]
+    half = S.convert(0.5, S.f32)
+    one = S.convert(1.0, S.f32)
+    gelu = half * mean * (one + S.erf(mean / S.convert(SQRT_2, S.f32)))
+
+    for col in S.range(lane, OUT_FEATURES, 64):
+        idx = row * OUT_FEATURES + col
+        Y[idx] = S.convert(S.convert(X[idx], S.f32) + gelu, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.gemm = nn.Linear(in_features, out_features, bias=bias)
+        self.subtract = nn.Parameter(torch.randn(out_features))
+        self._cached_weight_ptr = None
+        self._cached_bias_ptr = None
+        self._cached_sub_ptr = None
+        self._cached_device = None
+        self._cached_weight_mean = None
+        self._cached_bias_sub_mean = None
+
+    def _refresh_cache(self, x: torch.Tensor) -> None:
+        weight = self.gemm.weight
+        bias = self.gemm.bias
+        sub = self.subtract
+        weight_ptr = weight.data_ptr()
+        bias_ptr = bias.data_ptr()
+        sub_ptr = sub.data_ptr()
+        device = x.device
+        if (
+            self._cached_weight_ptr == weight_ptr
+            and self._cached_bias_ptr == bias_ptr
+            and self._cached_sub_ptr == sub_ptr
+            and self._cached_device == device
+            and self._cached_weight_mean is not None
+            and self._cached_bias_sub_mean is not None
+        ):
+            return
+
+        weight_mean = weight.to(device=device, dtype=torch.float32).sum(dim=0)
+        weight_mean.mul_(1.0 / OUT_FEATURES)
+        self._cached_weight_mean = weight_mean.to(dtype=torch.bfloat16).contiguous()
+
+        bias_sub_mean = bias.to(device=device, dtype=torch.float32)
+        bias_sub_mean.sub_(sub.to(device=device, dtype=torch.float32))
+        bias_sub_mean = bias_sub_mean.mean().view(1).contiguous()
+        self._cached_bias_sub_mean = bias_sub_mean
+
+        self._cached_weight_ptr = weight_ptr
+        self._cached_bias_ptr = bias_ptr
+        self._cached_sub_ptr = sub_ptr
+        self._cached_device = device
+
+    def forward(self, x):
+        if (
+            tuple(x.shape) != (BATCH_SIZE, IN_FEATURES)
+            or x.dtype != torch.bfloat16
+            or tuple(self.subtract.shape) != (OUT_FEATURES,)
+        ):
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+
+        self._refresh_cache(x)
+        x_flat = x.contiguous().view(X_NUMEL)
+        y = torch.empty_like(x)
+        y_flat = y.view(X_NUMEL)
+        fused_kernel[_launch](
+            x_flat,
+            self._cached_weight_mean,
+            self._cached_bias_sub_mean,
+            y_flat,
+        )
+        return y
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+I have the starting kernel and MFMA usage pattern. Reading the current `output_model_new.py` now so I can patch just the kernel path instead of reworking unrelated parts.
+exec
+/bin/bash -lc "sed -n '1,320p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+SQRT_2 = 1.4142135623730951
+BATCH_SIZE = 2048
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+ROWS_PER_BLOCK = 4
+THREADS_PER_BLOCK = 256
+X_NUMEL = BATCH_SIZE * IN_FEATURES
+X_RANGE_BYTES = X_NUMEL * 2
+W_RANGE_BYTES = IN_FEATURES * 2
+
+
+def _launch():
+    return ((BATCH_SIZE // ROWS_PER_BLOCK, 1, 1), (THREADS_PER_BLOCK, 1, 1))
+
+
+@substrate.jit
+def fused_kernel(
+    X: S.Tensor((X_NUMEL,), S.bf16),
+    WMEAN: S.Tensor((IN_FEATURES,), S.bf16),
+    BIAS_SUB_MEAN: S.Tensor((1,), S.f32),
+    Y: S.Tensor((X_NUMEL,), S.bf16),
+):
+    tid = S.thread_id(0)
+    lane = tid & 63
+    warp = tid >> 6
+    warp_row = warp >> 1
+    warp_col = warp & 1
+    row = S.block_id(0) * ROWS_PER_BLOCK + warp_row * 2 + warp_col
+
+    x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+    w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+    zero = S.convert(0, S.i32)
+    acc = S.full((16,), 0.0, S.f32)
+
+    for k_base in S.range(0, IN_FEATURES, 16):
+        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+        w_offset = S.convert(k_base * 2, S.i32)
+        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+        S.syncthreads()
+
+        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
+        S.syncthreads()
+
+    mean = acc[0] + BIAS_SUB_MEAN[0]
+    half = S.convert(0.5, S.f32)
+    one = S.convert(1.0, S.f32)
+    gelu = half * mean * (one + S.erf(mean / S.convert(SQRT_2, S.f32)))
+
+    for col in S.range(lane, OUT_FEATURES, 64):
+        idx = row * OUT_FEATURES + col
+        Y[idx] = S.convert(S.convert(X[idx], S.f32) + gelu, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.gemm = nn.Linear(in_features, out_features, bias=bias)
+        self.subtract = nn.Parameter(torch.randn(out_features))
+        self._cached_weight_ptr = None
+        self._cached_bias_ptr = None
+        self._cached_sub_ptr = None
+        self._cached_device = None
+        self._cached_weight_mean = None
+        self._cached_bias_sub_mean = None
+
+    def _refresh_cache(self, x: torch.Tensor) -> None:
+        weight = self.gemm.weight
+        bias = self.gemm.bias
+        sub = self.subtract
+        weight_ptr = weight.data_ptr()
+        bias_ptr = bias.data_ptr()
+        sub_ptr = sub.data_ptr()
+        device = x.device
+        if (
+            self._cached_weight_ptr == weight_ptr
+            and self._cached_bias_ptr == bias_ptr
+            and self._cached_sub_ptr == sub_ptr
+            and self._cached_device == device
+            and self._cached_weight_mean is not None
+            and self._cached_bias_sub_mean is not None
+        ):
+            return
+
+        weight_mean = weight.to(device=device, dtype=torch.float32).sum(dim=0)
+        weight_mean.mul_(1.0 / OUT_FEATURES)
+        self._cached_weight_mean = weight_mean.to(dtype=torch.bfloat16).contiguous()
+
+        bias_sub_mean = bias.to(device=device, dtype=torch.float32)
+        bias_sub_mean.sub_(sub.to(device=device, dtype=torch.float32))
+        bias_sub_mean = bias_sub_mean.mean().view(1).contiguous()
+        self._cached_bias_sub_mean = bias_sub_mean
+
+        self._cached_weight_ptr = weight_ptr
+        self._cached_bias_ptr = bias_ptr
+        self._cached_sub_ptr = sub_ptr
+        self._cached_device = device
+
+    def forward(self, x):
+        if (
+            tuple(x.shape) != (BATCH_SIZE, IN_FEATURES)
+            or x.dtype != torch.bfloat16
+            or tuple(self.subtract.shape) != (OUT_FEATURES,)
+        ):
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+
+        self._refresh_cache(x)
+        x_flat = x.contiguous().view(X_NUMEL)
+        y = torch.empty_like(x)
+        y_flat = y.view(X_NUMEL)
+        fused_kernel[_launch](
+            x_flat,
+            self._cached_weight_mean,
+            self._cached_bias_sub_mean,
+            y_flat,
+        )
+        return y
+
+codex
+The kernel change is local: I’m replacing the single-stage shared-memory loop with a double-buffered, unrolled-by-2 pipeline and leaving the model/cache path intact.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+index a60977a4ee5cb7fb5ccb973b2fd20a88d15cdec6..e0a694e58d159424f2e9f200b710ba30794f6306
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -34,24 +34,62 @@
+ 
+     x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+     w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+-    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_x = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_w = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     zero = S.convert(0, S.i32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_base in S.range(0, IN_FEATURES, 16):
+-        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+-        w_offset = S.convert(k_base * 2, S.i32)
+-        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        S.syncthreads()
++    x_offset0 = S.convert((row * IN_FEATURES) * 2, S.i32)
++    w_offset0 = S.convert(0, S.i32)
++    shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
++    shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset0, 0)
++
++    x_offset1 = S.convert((row * IN_FEATURES + 16) * 2, S.i32)
++    w_offset1 = S.convert(16 * 2, S.i32)
++    shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
++    shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset1, 0)
++    S.syncthreads()
++
++    for k_base in S.range(0, IN_FEATURES - 32, 32):
++        x_pack0 = shared_x[0, tid]
++        w_pack0 = shared_w[0, tid]
++        x_frag0 = S.view(x_pack0, S.Tensor((2, 4, 1), S.bf16))
++        w_frag0 = S.view(w_pack0, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k0 = k_base + 32
++        next_x_offset0 = S.convert((row * IN_FEATURES + next_k0) * 2, S.i32)
++        next_w_offset0 = S.convert(next_k0 * 2, S.i32)
++        shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
++        shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset0, 0)
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[0], w_frag0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[1], w_frag0[1], acc)
++
++        x_pack1 = shared_x[1, tid]
++        w_pack1 = shared_w[1, tid]
++        x_frag1 = S.view(x_pack1, S.Tensor((2, 4, 1), S.bf16))
++        w_frag1 = S.view(w_pack1, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k1 = k_base + 48
++        next_x_offset1 = S.convert((row * IN_FEATURES + next_k1) * 2, S.i32)
++        next_w_offset1 = S.convert(next_k1 * 2, S.i32)
++        shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
++        shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset1, 0)
+ 
+-        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+-        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[0], w_frag1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[1], w_frag1[1], acc)
+         S.syncthreads()
+ 
++    x_tail0 = S.view(shared_x[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail0 = S.view(shared_w[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[0], w_tail0[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[1], w_tail0[1], acc)
++
++    x_tail1 = S.view(shared_x[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail1 = S.view(shared_w[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[0], w_tail1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[1], w_tail1[1], acc)
++
+     mean = acc[0] + BIAS_SUB_MEAN[0]
+     half = S.convert(0.5, S.f32)
+     one = S.convert(1.0, S.f32)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+index a60977a4ee5cb7fb5ccb973b2fd20a88d15cdec6..e0a694e58d159424f2e9f200b710ba30794f6306
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -34,24 +34,62 @@
+ 
+     x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+     w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+-    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_x = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_w = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     zero = S.convert(0, S.i32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_base in S.range(0, IN_FEATURES, 16):
+-        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+-        w_offset = S.convert(k_base * 2, S.i32)
+-        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        S.syncthreads()
++    x_offset0 = S.convert((row * IN_FEATURES) * 2, S.i32)
++    w_offset0 = S.convert(0, S.i32)
++    shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
++    shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset0, 0)
++
++    x_offset1 = S.convert((row * IN_FEATURES + 16) * 2, S.i32)
++    w_offset1 = S.convert(16 * 2, S.i32)
++    shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
++    shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset1, 0)
++    S.syncthreads()
++
++    for k_base in S.range(0, IN_FEATURES - 32, 32):
++        x_pack0 = shared_x[0, tid]
++        w_pack0 = shared_w[0, tid]
++        x_frag0 = S.view(x_pack0, S.Tensor((2, 4, 1), S.bf16))
++        w_frag0 = S.view(w_pack0, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k0 = k_base + 32
++        next_x_offset0 = S.convert((row * IN_FEATURES + next_k0) * 2, S.i32)
++        next_w_offset0 = S.convert(next_k0 * 2, S.i32)
++        shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
++        shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset0, 0)
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[0], w_frag0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[1], w_frag0[1], acc)
++
++        x_pack1 = shared_x[1, tid]
++        w_pack1 = shared_w[1, tid]
++        x_frag1 = S.view(x_pack1, S.Tensor((2, 4, 1), S.bf16))
++        w_frag1 = S.view(w_pack1, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k1 = k_base + 48
++        next_x_offset1 = S.convert((row * IN_FEATURES + next_k1) * 2, S.i32)
++        next_w_offset1 = S.convert(next_k1 * 2, S.i32)
++        shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
++        shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset1, 0)
+ 
+-        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+-        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[0], w_frag1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[1], w_frag1[1], acc)
+         S.syncthreads()
+ 
++    x_tail0 = S.view(shared_x[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail0 = S.view(shared_w[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[0], w_tail0[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[1], w_tail0[1], acc)
++
++    x_tail1 = S.view(shared_x[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail1 = S.view(shared_w[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[0], w_tail1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[1], w_tail1[1], acc)
++
+     mean = acc[0] + BIAS_SUB_MEAN[0]
+     half = S.convert(0.5, S.f32)
+     one = S.convert(1.0, S.f32)
+
+codex
+The first pipelined version is in place. Running the mandated round-local evaluation now and I’ll fix only concrete failures if any show up.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+index a60977a4ee5cb7fb5ccb973b2fd20a88d15cdec6..e0a694e58d159424f2e9f200b710ba30794f6306
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -34,24 +34,62 @@
+ 
+     x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+     w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+-    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_x = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_w = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     zero = S.convert(0, S.i32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_base in S.range(0, IN_FEATURES, 16):
+-        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+-        w_offset = S.convert(k_base * 2, S.i32)
+-        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        S.syncthreads()
++    x_offset0 = S.convert((row * IN_FEATURES) * 2, S.i32)
++    w_offset0 = S.convert(0, S.i32)
++    shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
++    shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset0, 0)
++
++    x_offset1 = S.convert((row * IN_FEATURES + 16) * 2, S.i32)
++    w_offset1 = S.convert(16 * 2, S.i32)
++    shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
++    shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset1, 0)
++    S.syncthreads()
++
++    for k_base in S.range(0, IN_FEATURES - 32, 32):
++        x_pack0 = shared_x[0, tid]
++        w_pack0 = shared_w[0, tid]
++        x_frag0 = S.view(x_pack0, S.Tensor((2, 4, 1), S.bf16))
++        w_frag0 = S.view(w_pack0, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k0 = k_base + 32
++        next_x_offset0 = S.convert((row * IN_FEATURES + next_k0) * 2, S.i32)
++        next_w_offset0 = S.convert(next_k0 * 2, S.i32)
++        shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
++        shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset0, 0)
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[0], w_frag0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[1], w_frag0[1], acc)
++
++        x_pack1 = shared_x[1, tid]
++        w_pack1 = shared_w[1, tid]
++        x_frag1 = S.view(x_pack1, S.Tensor((2, 4, 1), S.bf16))
++        w_frag1 = S.view(w_pack1, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k1 = k_base + 48
++        next_x_offset1 = S.convert((row * IN_FEATURES + next_k1) * 2, S.i32)
++        next_w_offset1 = S.convert(next_k1 * 2, S.i32)
++        shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
++        shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset1, 0)
+ 
+-        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+-        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[0], w_frag1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[1], w_frag1[1], acc)
+         S.syncthreads()
+ 
++    x_tail0 = S.view(shared_x[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail0 = S.view(shared_w[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[0], w_tail0[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[1], w_tail0[1], acc)
++
++    x_tail1 = S.view(shared_x[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail1 = S.view(shared_w[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[0], w_tail1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[1], w_tail1[1], acc)
++
+     mean = acc[0] + BIAS_SUB_MEAN[0]
+     half = S.convert(0.5, S.f32)
+     one = S.convert(1.0, S.f32)
+
+codex
+The evaluator is still running. I’m waiting on the concrete result before making any further changes.
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+index a60977a4ee5cb7fb5ccb973b2fd20a88d15cdec6..e0a694e58d159424f2e9f200b710ba30794f6306
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -34,24 +34,62 @@
+ 
+     x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+     w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+-    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_x = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_w = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     zero = S.convert(0, S.i32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_base in S.range(0, IN_FEATURES, 16):
+-        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+-        w_offset = S.convert(k_base * 2, S.i32)
+-        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        S.syncthreads()
++    x_offset0 = S.convert((row * IN_FEATURES) * 2, S.i32)
++    w_offset0 = S.convert(0, S.i32)
++    shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
++    shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset0, 0)
++
++    x_offset1 = S.convert((row * IN_FEATURES + 16) * 2, S.i32)
++    w_offset1 = S.convert(16 * 2, S.i32)
++    shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
++    shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset1, 0)
++    S.syncthreads()
++
++    for k_base in S.range(0, IN_FEATURES - 32, 32):
++        x_pack0 = shared_x[0, tid]
++        w_pack0 = shared_w[0, tid]
++        x_frag0 = S.view(x_pack0, S.Tensor((2, 4, 1), S.bf16))
++        w_frag0 = S.view(w_pack0, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k0 = k_base + 32
++        next_x_offset0 = S.convert((row * IN_FEATURES + next_k0) * 2, S.i32)
++        next_w_offset0 = S.convert(next_k0 * 2, S.i32)
++        shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
++        shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset0, 0)
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[0], w_frag0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[1], w_frag0[1], acc)
++
++        x_pack1 = shared_x[1, tid]
++        w_pack1 = shared_w[1, tid]
++        x_frag1 = S.view(x_pack1, S.Tensor((2, 4, 1), S.bf16))
++        w_frag1 = S.view(w_pack1, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k1 = k_base + 48
++        next_x_offset1 = S.convert((row * IN_FEATURES + next_k1) * 2, S.i32)
++        next_w_offset1 = S.convert(next_k1 * 2, S.i32)
++        shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
++        shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset1, 0)
+ 
+-        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+-        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[0], w_frag1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[1], w_frag1[1], acc)
+         S.syncthreads()
+ 
++    x_tail0 = S.view(shared_x[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail0 = S.view(shared_w[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[0], w_tail0[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[1], w_tail0[1], acc)
++
++    x_tail1 = S.view(shared_x[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail1 = S.view(shared_w[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[0], w_tail1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[1], w_tail1[1], acc)
++
+     mean = acc[0] + BIAS_SUB_MEAN[0]
+     half = S.convert(0.5, S.f32)
+     one = S.convert(1.0, S.f32)
+
+ succeeded in 5979ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+codex
+The harness finished cleanly. I’m reading the round-local eval output to confirm correctness and capture the result status.
+exec
+/bin/bash -lc "sed -n '1,120p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782386840.334224, "run_ended_at": 1782386844.141863, "run_wall_time_s": 3.807638, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 0.243, "ref_runtime_us": 0.589, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782386840.334331, "event_type": "eval_start"}, {"timestamp": 1782386840.334403, "event_type": "load_reference_model_start"}, {"timestamp": 1782386840.664684, "event_type": "load_reference_model_end", "duration_s": 0.330254}, {"timestamp": 1782386840.664732, "event_type": "custom_model_import_start"}, {"timestamp": 1782386840.728117, "event_type": "custom_model_import_end", "duration_s": 0.063371}, {"timestamp": 1782386840.728124, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782386841.378115, "event_type": "instantiate_and_to_device_end", "duration_s": 0.649969}, {"timestamp": 1782386841.378127, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782386842.418038, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.039899}, {"timestamp": 1782386842.418045, "event_type": "correctness_check_start"}, {"timestamp": 1782386843.846438, "event_type": "correctness_check_end", "duration_s": 1.428375}, {"timestamp": 1782386843.942666, "event_type": "candidate_profile_start"}, {"timestamp": 1782386843.995745, "event_type": "candidate_profile_end", "duration_s": 0.053048}, {"timestamp": 1782386844.093894, "event_type": "reference_profile_start"}, {"timestamp": 1782386844.140484, "event_type": "reference_profile_end", "duration_s": 0.046559}, {"timestamp": 1782386844.140715, "event_type": "cleanup_start"}, {"timestamp": 1782386844.141712, "event_type": "cleanup_end", "duration_s": 0.00099}, {"timestamp": 1782386844.141716, "event_type": "eval_end", "duration_s": 3.807384}], "load_reference_model_s": 0.330254, "custom_model_import_compile_s": 0.063371, "instantiate_and_to_device_s": 0.649969, "first_candidate_invocation_s": 1.039899, "correctness_check_s": 1.428375, "candidate_profile_wall_time_s": 0.053048, "reference_profile_wall_time_s": 0.046559, "cleanup_s": 0.00099, "eval_total_wall_time_s": 3.807384, "compile_time_s": 1.10327, "profile_time_s": 0.099607}}, "runtime_stats": {"mean": 0.243, "std": 0.0, "min": 0.243, "max": 0.243, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.589, "std": 0.0, "min": 0.589, "max": 0.589, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782386840.334331, "event_type": "eval_start"}, {"timestamp": 1782386840.334403, "event_type": "load_reference_model_start"}, {"timestamp": 1782386840.664684, "event_type": "load_reference_model_end", "duration_s": 0.330254}, {"timestamp": 1782386840.664732, "event_type": "custom_model_import_start"}, {"timestamp": 1782386840.728117, "event_type": "custom_model_import_end", "duration_s": 0.063371}, {"timestamp": 1782386840.728124, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782386841.378115, "event_type": "instantiate_and_to_device_end", "duration_s": 0.649969}, {"timestamp": 1782386841.378127, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782386842.418038, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.039899}, {"timestamp": 1782386842.418045, "event_type": "correctness_check_start"}, {"timestamp": 1782386843.846438, "event_type": "correctness_check_end", "duration_s": 1.428375}, {"timestamp": 1782386843.942666, "event_type": "candidate_profile_start"}, {"timestamp": 1782386843.995745, "event_type": "candidate_profile_end", "duration_s": 0.053048}, {"timestamp": 1782386844.093894, "event_type": "reference_profile_start"}, {"timestamp": 1782386844.140484, "event_type": "reference_profile_end", "duration_s": 0.046559}, {"timestamp": 1782386844.140715, "event_type": "cleanup_start"}, {"timestamp": 1782386844.141712, "event_type": "cleanup_end", "duration_s": 0.00099}, {"timestamp": 1782386844.141716, "event_type": "eval_end", "duration_s": 3.807384}], "load_reference_model_s": 0.330254, "custom_model_import_compile_s": 0.063371, "instantiate_and_to_device_s": 0.649969, "first_candidate_invocation_s": 1.039899, "correctness_check_s": 1.428375, "candidate_profile_wall_time_s": 0.053048, "reference_profile_wall_time_s": 0.046559, "cleanup_s": 0.00099, "eval_total_wall_time_s": 3.807384, "compile_time_s": 1.10327, "profile_time_s": 0.099607}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+index a60977a4ee5cb7fb5ccb973b2fd20a88d15cdec6..e0a694e58d159424f2e9f200b710ba30794f6306
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -34,24 +34,62 @@
+ 
+     x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+     w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+-    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_x = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_w = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     zero = S.convert(0, S.i32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_base in S.range(0, IN_FEATURES, 16):
+-        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+-        w_offset = S.convert(k_base * 2, S.i32)
+-        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        S.syncthreads()
++    x_offset0 = S.convert((row * IN_FEATURES) * 2, S.i32)
++    w_offset0 = S.convert(0, S.i32)
++    shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
++    shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset0, 0)
++
++    x_offset1 = S.convert((row * IN_FEATURES + 16) * 2, S.i32)
++    w_offset1 = S.convert(16 * 2, S.i32)
++    shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
++    shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset1, 0)
++    S.syncthreads()
++
++    for k_base in S.range(0, IN_FEATURES - 32, 32):
++        x_pack0 = shared_x[0, tid]
++        w_pack0 = shared_w[0, tid]
++        x_frag0 = S.view(x_pack0, S.Tensor((2, 4, 1), S.bf16))
++        w_frag0 = S.view(w_pack0, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k0 = k_base + 32
++        next_x_offset0 = S.convert((row * IN_FEATURES + next_k0) * 2, S.i32)
++        next_w_offset0 = S.convert(next_k0 * 2, S.i32)
++        shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
++        shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset0, 0)
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[0], w_frag0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[1], w_frag0[1], acc)
++
++        x_pack1 = shared_x[1, tid]
++        w_pack1 = shared_w[1, tid]
++        x_frag1 = S.view(x_pack1, S.Tensor((2, 4, 1), S.bf16))
++        w_frag1 = S.view(w_pack1, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k1 = k_base + 48
++        next_x_offset1 = S.convert((row * IN_FEATURES + next_k1) * 2, S.i32)
++        next_w_offset1 = S.convert(next_k1 * 2, S.i32)
++        shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
++        shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset1, 0)
+ 
+-        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+-        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[0], w_frag1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[1], w_frag1[1], acc)
+         S.syncthreads()
+ 
++    x_tail0 = S.view(shared_x[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail0 = S.view(shared_w[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[0], w_tail0[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[1], w_tail0[1], acc)
++
++    x_tail1 = S.view(shared_x[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail1 = S.view(shared_w[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[0], w_tail1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[1], w_tail1[1], acc)
++
+     mean = acc[0] + BIAS_SUB_MEAN[0]
+     half = S.convert(0.5, S.f32)
+     one = S.convert(1.0, S.f32)
+
+codex
+Implemented the round-2 optimization in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py).
+
+The kernel now uses a double-buffered LDS pipeline with the existing `mfma_32x32x8_bf16_f32` path, preloads two 16-wide K slices, unrolls the K loop by 2, and overlaps global `raw_buffer_load_x4` traffic with LDS reads and MFMA issue before draining the final staged pair.
+
+Validation passed with the exact required command. The round-local eval result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/debug_eval.jsonl) shows `compiled: true`, `correctness: true`, and `runtime_us: 0.243` vs `ref_runtime_us: 0.589`.
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+index a60977a4ee5cb7fb5ccb973b2fd20a88d15cdec6..e0a694e58d159424f2e9f200b710ba30794f6306
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -34,24 +34,62 @@
+ 
+     x_rsrc = S.amdgpu.make_rsrc(X, X_RANGE_BYTES)
+     w_rsrc = S.amdgpu.make_rsrc(WMEAN, W_RANGE_BYTES)
+-    shared_x = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_w = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_x = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_w = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     zero = S.convert(0, S.i32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_base in S.range(0, IN_FEATURES, 16):
+-        x_offset = S.convert((row * IN_FEATURES + k_base) * 2, S.i32)
+-        w_offset = S.convert(k_base * 2, S.i32)
+-        shared_x[tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        shared_w[tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        S.syncthreads()
++    x_offset0 = S.convert((row * IN_FEATURES) * 2, S.i32)
++    w_offset0 = S.convert(0, S.i32)
++    shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
++    shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset0, 0)
++
++    x_offset1 = S.convert((row * IN_FEATURES + 16) * 2, S.i32)
++    w_offset1 = S.convert(16 * 2, S.i32)
++    shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
++    shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset1, 0)
++    S.syncthreads()
++
++    for k_base in S.range(0, IN_FEATURES - 32, 32):
++        x_pack0 = shared_x[0, tid]
++        w_pack0 = shared_w[0, tid]
++        x_frag0 = S.view(x_pack0, S.Tensor((2, 4, 1), S.bf16))
++        w_frag0 = S.view(w_pack0, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k0 = k_base + 32
++        next_x_offset0 = S.convert((row * IN_FEATURES + next_k0) * 2, S.i32)
++        next_w_offset0 = S.convert(next_k0 * 2, S.i32)
++        shared_x[0, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
++        shared_w[0, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset0, 0)
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[0], w_frag0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag0[1], w_frag0[1], acc)
++
++        x_pack1 = shared_x[1, tid]
++        w_pack1 = shared_w[1, tid]
++        x_frag1 = S.view(x_pack1, S.Tensor((2, 4, 1), S.bf16))
++        w_frag1 = S.view(w_pack1, S.Tensor((2, 4, 1), S.bf16))
++
++        next_k1 = k_base + 48
++        next_x_offset1 = S.convert((row * IN_FEATURES + next_k1) * 2, S.i32)
++        next_w_offset1 = S.convert(next_k1 * 2, S.i32)
++        shared_x[1, tid] = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
++        shared_w[1, tid] = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, next_w_offset1, 0)
+ 
+-        x_frag = S.view(shared_x[tid], S.Tensor((2, 4, 1), S.bf16))
+-        w_frag = S.view(shared_w[tid], S.Tensor((2, 4, 1), S.bf16))
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[0], w_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag[1], w_frag[1], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[0], w_frag1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_frag1[1], w_frag1[1], acc)
+         S.syncthreads()
+ 
++    x_tail0 = S.view(shared_x[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail0 = S.view(shared_w[0, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[0], w_tail0[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail0[1], w_tail0[1], acc)
++
++    x_tail1 = S.view(shared_x[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    w_tail1 = S.view(shared_w[1, tid], S.Tensor((2, 4, 1), S.bf16))
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[0], w_tail1[0], acc)
++    acc = S.amdgpu.mfma_32x32x8_bf16_f32(x_tail1[1], w_tail1[1], acc)
++
+     mean = acc[0] + BIAS_SUB_MEAN[0]
+     half = S.convert(0.5, S.f32)
+     one = S.convert(1.0, S.f32)
+
+tokens used
+20,419

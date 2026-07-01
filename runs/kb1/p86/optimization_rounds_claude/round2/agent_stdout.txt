@@ -1,0 +1,15 @@
+All 3 validation tests passed. The Split-K implementation with `SPLIT_K_SLICES = 2` is complete:
+
+**Key changes implemented:**
+
+1. **Block decomposition**: `linear_block_id = tile_block_id * SPLIT_K_SLICES + split_k_id` - extends the grid in the x dimension while preserving M/N tile ownership
+
+2. **Channel partition**: Each split handles `c_per_split = ceil_div(in_channels, SPLIT_K_SLICES)` contiguous channels. Split 0: channels [0, 32), Split 1: channels [32, 64)
+
+3. **K linearization**: `k_idx = c * kernel_area + kh * kernel_w + kw` (channel-major instead of spatial-major), ensuring split boundaries are channel-aligned
+
+4. **Operand layout**: Reads input and weights directly as NCHW/OIHW tensors without pre-permutation
+
+5. **Reduction**: All splits accumulate into an fp32 workspace using `S.amdgpu.buffer_atomic_add_f32` with GEMM-major indexing `linear_idx = row * gemm_n + col`
+
+6. **Finalization**: A separate `store_kernel` converts the fp32 workspace back to bf16 NCHW output layout after all split reductions complete

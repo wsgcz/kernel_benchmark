@@ -1,0 +1,2538 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efeb0-0cf6-7ee3-b775-a2dd2c1847a4
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/candidate_input.py.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 3: Prompt 3
+
+Utilize range in S.amdgpu.raw_buffer_load_x4 / S.amdgpu.raw_buffer_store_* to remove the explicit branches guarding OOB access. The range is in the units of bytes. When range is set, S.amdgpu.raw_buffer_load_x4() returns 0 for OOB elements, and S.amdgpu.raw_buffer_store*() discards the OOB writes. The computations and LDS access still work with 0, and the OOB writes are discarded, therefore the optimization is safe. Removing the branches in the loop is more beneficial compared to reducing extra computations and LDS access.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel first, then I’ll grab one nearby local MFMA example and move straight into editing `output_model_new.py` for the range-based raw buffer OOB removal.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+BATCH_SIZE = 1024
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+BLOCK_M = 64
+BLOCK_N = 64
+WAVES_PER_BLOCK = 4
+LANES_PER_WAVE = 64
+THREADS_PER_BLOCK = WAVES_PER_BLOCK * LANES_PER_WAVE
+
+
+def _launch():
+    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
+
+
+@substrate.jit
+def fused_kernel(
+    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
+    W: S.Tensor((OUT_FEATURES, IN_FEATURES), S.bf16),
+    EXTRA_BIAS: S.Tensor((OUT_FEATURES,), S.bf16),
+    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    tid = S.thread_id(0)
+    wave = tid >> 6
+    lane = tid & 63
+
+    block_m = S.block_id(1) * BLOCK_M
+    block_n = S.block_id(0) * BLOCK_N
+    wave_m = wave >> 1
+    wave_n = wave & 1
+
+    lane_row = ((lane & 15) << 1) + ((lane >> 4) & 1)
+    lane_k_quad = lane >> 5
+
+    out_row_base = block_m + wave_m * 32
+    out_col_base = block_n + wave_n * 32
+    x_row = out_row_base + lane_row
+    w_row = out_col_base + lane_row
+
+    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
+
+    a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+    b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+    zero = S.convert(0, S.i32)
+
+    lane_partner = lane ^ 32
+
+    a_src_elem = x_row * IN_FEATURES + lane_k_quad * 8
+    b_src_elem = w_row * IN_FEATURES + lane_k_quad * 8
+    a_src_off = S.convert(a_src_elem * 2, S.i32)
+    b_src_off = S.convert(b_src_elem * 2, S.i32)
+    a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+    b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+
+    if lane_k_quad == 0:
+        a_words[0, wave, lane, 0] = a_pack[0]
+        a_words[0, wave, lane, 1] = a_pack[1]
+        b_words[0, wave, lane, 0] = b_pack[0]
+        b_words[0, wave, lane, 1] = b_pack[1]
+        a_words[0, wave, lane_partner, 0] = a_pack[2]
+        a_words[0, wave, lane_partner, 1] = a_pack[3]
+        b_words[0, wave, lane_partner, 0] = b_pack[2]
+        b_words[0, wave, lane_partner, 1] = b_pack[3]
+    else:
+        a_words[0, wave, lane_partner, 2] = a_pack[0]
+        a_words[0, wave, lane_partner, 3] = a_pack[1]
+        b_words[0, wave, lane_partner, 2] = b_pack[0]
+        b_words[0, wave, lane_partner, 3] = b_pack[1]
+        a_words[0, wave, lane, 2] = a_pack[2]
+        a_words[0, wave, lane, 3] = a_pack[3]
+        b_words[0, wave, lane, 2] = b_pack[2]
+        b_words[0, wave, lane, 3] = b_pack[3]
+
+    a_src_elem = x_row * IN_FEATURES + 16 + lane_k_quad * 8
+    b_src_elem = w_row * IN_FEATURES + 16 + lane_k_quad * 8
+    a_src_off = S.convert(a_src_elem * 2, S.i32)
+    b_src_off = S.convert(b_src_elem * 2, S.i32)
+    a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+    b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+
+    if lane_k_quad == 0:
+        a_words[1, wave, lane, 0] = a_pack[0]
+        a_words[1, wave, lane, 1] = a_pack[1]
+        b_words[1, wave, lane, 0] = b_pack[0]
+        b_words[1, wave, lane, 1] = b_pack[1]
+        a_words[1, wave, lane_partner, 0] = a_pack[2]
+        a_words[1, wave, lane_partner, 1] = a_pack[3]
+        b_words[1, wave, lane_partner, 0] = b_pack[2]
+        b_words[1, wave, lane_partner, 1] = b_pack[3]
+    else:
+        a_words[1, wave, lane_partner, 2] = a_pack[0]
+        a_words[1, wave, lane_partner, 3] = a_pack[1]
+        b_words[1, wave, lane_partner, 2] = b_pack[0]
+        b_words[1, wave, lane_partner, 3] = b_pack[1]
+        a_words[1, wave, lane, 2] = a_pack[2]
+        a_words[1, wave, lane, 3] = a_pack[3]
+        b_words[1, wave, lane, 2] = b_pack[2]
+        b_words[1, wave, lane, 3] = b_pack[3]
+
+    S.syncthreads()
+
+    for k_base in S.range(0, IN_FEATURES, 32):
+        a_frag_0 = S.view(a_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        next_k0 = k_base + 32
+        if next_k0 < IN_FEATURES:
+            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+
+            if lane_k_quad == 0:
+                a_words[0, wave, lane, 0] = a_pack_0[0]
+                a_words[0, wave, lane, 1] = a_pack_0[1]
+                b_words[0, wave, lane, 0] = b_pack_0[0]
+                b_words[0, wave, lane, 1] = b_pack_0[1]
+                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+            else:
+                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+                a_words[0, wave, lane, 2] = a_pack_0[2]
+                a_words[0, wave, lane, 3] = a_pack_0[3]
+                b_words[0, wave, lane, 2] = b_pack_0[2]
+                b_words[0, wave, lane, 3] = b_pack_0[3]
+
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+
+        a_frag_1 = S.view(a_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        next_k1 = k_base + 48
+        if next_k1 < IN_FEATURES:
+            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+
+            if lane_k_quad == 0:
+                a_words[1, wave, lane, 0] = a_pack_1[0]
+                a_words[1, wave, lane, 1] = a_pack_1[1]
+                b_words[1, wave, lane, 0] = b_pack_1[0]
+                b_words[1, wave, lane, 1] = b_pack_1[1]
+                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+            else:
+                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+                a_words[1, wave, lane, 2] = a_pack_1[2]
+                a_words[1, wave, lane, 3] = a_pack_1[3]
+                b_words[1, wave, lane, 2] = b_pack_1[2]
+                b_words[1, wave, lane, 3] = b_pack_1[3]
+
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+
+        if k_base + 32 < IN_FEATURES:
+            S.syncthreads()
+
+    for idx in S.range(16):
+        row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+        col = out_col_base + lane_row
+        value = c_lane[idx] + S.convert(EXTRA_BIAS[col], S.f32)
+        if value < S.convert(0.0, S.f32):
+            value = S.convert(0.0, S.f32)
+        Y[row, col] = S.convert(value, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, bias_shape):
+        super().__init__()
+        self.gemm = nn.Linear(in_features, out_features, bias=False)
+        self.bias = nn.Parameter(torch.randn(bias_shape))
+        self._weight_cache = None
+        self._bias_cache = None
+        self._weight_cache_ptr = None
+        self._bias_cache_ptr = None
+        self._cache_device = None
+
+    def _refresh_caches(self, x: torch.Tensor):
+        device = x.device
+        dtype = torch.bfloat16
+        weight_ptr = self.gemm.weight.data_ptr()
+        bias_ptr = self.bias.data_ptr()
+        need_rebuild = (
+            self._weight_cache is None
+            or self._bias_cache is None
+            or self._cache_device != device
+            or self._weight_cache_ptr != weight_ptr
+            or self._bias_cache_ptr != bias_ptr
+        )
+        if need_rebuild:
+            self._weight_cache = torch.empty((OUT_FEATURES, IN_FEATURES), device=device, dtype=dtype)
+            self._bias_cache = torch.empty((OUT_FEATURES,), device=device, dtype=dtype)
+            self._cache_device = device
+            self._weight_cache_ptr = weight_ptr
+            self._bias_cache_ptr = bias_ptr
+        self._weight_cache.copy_(self.gemm.weight.detach().to(device=device, dtype=dtype))
+        self._bias_cache.copy_(self.bias.detach().to(device=device, dtype=dtype))
+
+    def forward(self, x):
+        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+        if tuple(self.bias.shape) != (OUT_FEATURES,):
+            raise RuntimeError("This fused kernel only supports the benchmark bias shape.")
+        if not x.is_contiguous():
+            x = x.contiguous()
+        self._refresh_caches(x)
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+        fused_kernel[_launch](x, self._weight_cache, self._bias_cache, y)
+        return y
+
+exec
+/bin/bash -lc "rg -n \"raw_buffer_load_x4|mfma|amdgpu.raw_buffer\" /workspace/substrate --glob '*.py' --glob '*.pyi' --glob '*.md' | head -n 80" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:12:def gemm_mfma_16x16x16(
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:24:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:25:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:31:def gemm_mfma_32x32x8_bf16(
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/docs/skills/draft-substrate-program/SKILL.md:11:- The DSL exposes intrinsics for AMD-specific features like MFMA, buffer load / store. (e.g., `S.amdgpu.mfma_16x16x16_f16_f32`).
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_store_subview.py:24:    S.amdgpu.raw_buffer_store_x4(src[0], out_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_store_subview.py:39:    S.amdgpu.raw_buffer_store_x4(src[0], row_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:18:def kernel_amdgpu_raw_buffer_roundtrip(
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:30:    value_x1 = S.amdgpu.raw_buffer_load_x1(src_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:31:    value_x2 = S.amdgpu.raw_buffer_load_x2(src_rsrc, zero, offset_x2, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:34:    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:35:    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:36:    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:40:def kernel_amdgpu_raw_buffer_bf16_view(
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:82:        kernel_amdgpu_raw_buffer_roundtrip[lambda: ((1, 1, 1), (1, 1, 1))](
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:92:        mlir = generate_mlir(kernel_amdgpu_raw_buffer_roundtrip)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:99:        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_load"), 3, mlir)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:100:        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:107:        kernel_amdgpu_raw_buffer_bf16_view[lambda: ((1, 1, 1), (1, 1, 1))](
+
+codex
+I have the kernel shape and the current double-buffered pipeline. I’m reading one MFMA example and one raw-buffer example now to confirm the `range` calling pattern, then I’ll patch `output_model_new.py` directly.
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+import _substrate_bindings as _C
+from substrate.compiler.code_generator import (
+    _build_import_module,
+    _collect_jit_dependencies,
+    _get_function_def,
+)
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_roundtrip(
+    src: S.Tensor((7,), S.i32),
+    dst: S.Tensor((7,), S.i32),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+    dst_rsrc = S.amdgpu.make_rsrc(dst, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    offset_x2 = S.convert(4, S.i32)
+    offset_x4 = S.convert(12, S.i32)
+
+    value_x1 = S.amdgpu.raw_buffer_load_x1(src_rsrc, zero, zero, 0)
+    value_x2 = S.amdgpu.raw_buffer_load_x2(src_rsrc, zero, offset_x2, 0)
+    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+
+    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_bf16_view(
+    src: S.Tensor((8,), S.bf16),
+    dst: S.Tensor((8,), S.bf16),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+    frag = S.view(packed, S.Tensor((2, 4, 1), S.bf16))
+
+    for i in S.range(2):
+        for j in S.range(4):
+            dst[i * 4 + j] = frag[i, j, 0]
+
+
+def generate_mlir(jit_fn) -> str:
+    jit_deps = _collect_jit_dependencies(jit_fn)
+    import_module = _build_import_module([jit_fn, *jit_deps])
+
+    generator = _C.MLIRGenerator()
+    generator.generate_from_python_ast(import_module)
+
+    for dep in jit_deps:
+        dep_func = _get_function_def(dep.parse())
+        generator.visit_function_def(dep_func, "[]", "jit")
+
+    kernel_func = _get_function_def(jit_fn.parse())
+    generator.visit_function_def(kernel_func, "[]", "kernel")
+    return generator.get_mlir()
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferOps(unittest.TestCase):
+    def test_raw_buffer_roundtrip(self):
+        src = torch.arange(7, dtype=torch.int32, device="cuda") * 17 - 9
+        dst = torch.full((7,), -1, dtype=torch.int32, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_roundtrip[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+    def test_make_rsrc_generates_pointer_and_range(self):
+        mlir = generate_mlir(kernel_amdgpu_raw_buffer_roundtrip)
+
+        self.assertIn(
+            "substrate.memref.extract_aligned_pointer_as_index",
+            mlir,
+        )
+        self.assertGreaterEqual(mlir.count("vector.insert %arg2"), 2, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_load"), 3, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+
+    def test_raw_buffer_bf16_view_extract(self):
+        src = torch.randn((8,), dtype=torch.bfloat16, device="cuda")
+        dst = torch.zeros((8,), dtype=torch.bfloat16, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_bf16_view[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+codex
+The key detail is per-row range safety: the resource has to be scoped so an overrun in `K` zeros out instead of reading the next row. I’m checking one subview buffer-store example for that pattern, then I’ll patch the kernel and remove the loop OOB branches.
+exec
+/bin/bash -lc "sed -n '1,180p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_store_subview.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+BF16_BYTES = 2
+
+
+@substrate.jit
+def kernel_store_x4_full_rsrc(
+    src: S.Tensor((1, 4), S.u32),
+    out_ptr: S.Pointer(S.bf16),
+    m: S.u32,
+    n: S.u32,
+):
+    out_memref = S.make_tensor(out_ptr, S.bf16, S.make_layout((m * n,), (1,)))
+    out_rsrc = S.amdgpu.make_rsrc(out_memref, m * n * BF16_BYTES)
+    zero = S.convert(0, S.u32)
+    S.amdgpu.raw_buffer_store_x4(src[0], out_rsrc, zero, zero, 0)
+
+
+@substrate.jit
+def kernel_store_x4_row_subview_rsrc(
+    src: S.Tensor((1, 4), S.u32),
+    out_ptr: S.Pointer(S.bf16),
+    m: S.u32,
+    n: S.u32,
+    row: S.u32,
+):
+    out_memref = S.make_tensor(out_ptr, S.bf16, S.make_layout((m * n,), (1,)))
+    row_view = S.subview(out_memref, (row * n,), (n,), (1,))
+    row_rsrc = S.amdgpu.make_rsrc(row_view, n * BF16_BYTES)
+    zero = S.convert(0, S.u32)
+    S.amdgpu.raw_buffer_store_x4(src[0], row_rsrc, zero, zero, 0)
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferStoreSubview(unittest.TestCase):
+    def test_row_subview_rsrc_honors_subview_offset(self):
+        values = torch.tensor(
+            [[0x3F803F80, 0x40004000, 0x40404040, 0x40804080]],
+            dtype=torch.int32,
+            device="cuda",
+        ).view(torch.uint32)
+
+        out_full = torch.zeros((4, 8), dtype=torch.bfloat16, device="cuda")
+        out_subview = torch.zeros((4, 8), dtype=torch.bfloat16, device="cuda")
+
+        kernel_store_x4_full_rsrc[lambda: ((1, 1, 1), (1, 1, 1))](
+            values, out_full, out_full.shape[0], out_full.shape[1]
+        )
+        kernel_store_x4_row_subview_rsrc[lambda: ((1, 1, 1), (1, 1, 1))](
+            values, out_subview, out_subview.shape[0], out_subview.shape[1], 1
+        )
+
+        expected = torch.tensor(
+            [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0],
+            dtype=torch.bfloat16,
+        )
+
+        self.assertTrue(torch.equal(out_full[0].cpu(), expected))
+        self.assertTrue(torch.equal(out_subview[1].cpu(), expected))
+        self.assertTrue(
+            torch.equal(out_subview[0].cpu(), torch.zeros_like(expected)),
+            f"Subview-backed descriptor wrote the wrong row:\n{out_subview.cpu()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+codex
+I have enough to implement. The change is straightforward: switch A/W fetches to row-subview resources with per-row byte ranges, make the prefetches unconditional, and keep the existing pipeline structure while removing the in-loop OOB branches.
+exec
+/bin/bash -lc 'ls -1 /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+agent_command.txt
+agent_stderr.txt
+agent_stdout.txt
+candidate_input.py
+case.txt
+eval_config.json
+input_model.py
+output_model_new.py
+prompt.txt
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+BATCH_SIZE = 1024
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+BLOCK_M = 64
+BLOCK_N = 64
+WAVES_PER_BLOCK = 4
+LANES_PER_WAVE = 64
+THREADS_PER_BLOCK = WAVES_PER_BLOCK * LANES_PER_WAVE
+
+
+def _launch():
+    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
+
+
+@substrate.jit
+def fused_kernel(
+    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
+    W: S.Tensor((OUT_FEATURES, IN_FEATURES), S.bf16),
+    EXTRA_BIAS: S.Tensor((OUT_FEATURES,), S.bf16),
+    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    tid = S.thread_id(0)
+    wave = tid >> 6
+    lane = tid & 63
+
+    block_m = S.block_id(1) * BLOCK_M
+    block_n = S.block_id(0) * BLOCK_N
+    wave_m = wave >> 1
+    wave_n = wave & 1
+
+    lane_row = ((lane & 15) << 1) + ((lane >> 4) & 1)
+    lane_k_quad = lane >> 5
+
+    out_row_base = block_m + wave_m * 32
+    out_col_base = block_n + wave_n * 32
+    x_row = out_row_base + lane_row
+    w_row = out_col_base + lane_row
+
+    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
+
+    a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+    b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+    zero = S.convert(0, S.i32)
+
+    lane_partner = lane ^ 32
+
+    a_src_elem = x_row * IN_FEATURES + lane_k_quad * 8
+    b_src_elem = w_row * IN_FEATURES + lane_k_quad * 8
+    a_src_off = S.convert(a_src_elem * 2, S.i32)
+    b_src_off = S.convert(b_src_elem * 2, S.i32)
+    a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+    b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+
+    if lane_k_quad == 0:
+        a_words[0, wave, lane, 0] = a_pack[0]
+        a_words[0, wave, lane, 1] = a_pack[1]
+        b_words[0, wave, lane, 0] = b_pack[0]
+        b_words[0, wave, lane, 1] = b_pack[1]
+        a_words[0, wave, lane_partner, 0] = a_pack[2]
+        a_words[0, wave, lane_partner, 1] = a_pack[3]
+        b_words[0, wave, lane_partner, 0] = b_pack[2]
+        b_words[0, wave, lane_partner, 1] = b_pack[3]
+    else:
+        a_words[0, wave, lane_partner, 2] = a_pack[0]
+        a_words[0, wave, lane_partner, 3] = a_pack[1]
+        b_words[0, wave, lane_partner, 2] = b_pack[0]
+        b_words[0, wave, lane_partner, 3] = b_pack[1]
+        a_words[0, wave, lane, 2] = a_pack[2]
+        a_words[0, wave, lane, 3] = a_pack[3]
+        b_words[0, wave, lane, 2] = b_pack[2]
+        b_words[0, wave, lane, 3] = b_pack[3]
+
+    a_src_elem = x_row * IN_FEATURES + 16 + lane_k_quad * 8
+    b_src_elem = w_row * IN_FEATURES + 16 + lane_k_quad * 8
+    a_src_off = S.convert(a_src_elem * 2, S.i32)
+    b_src_off = S.convert(b_src_elem * 2, S.i32)
+    a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+    b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+
+    if lane_k_quad == 0:
+        a_words[1, wave, lane, 0] = a_pack[0]
+        a_words[1, wave, lane, 1] = a_pack[1]
+        b_words[1, wave, lane, 0] = b_pack[0]
+        b_words[1, wave, lane, 1] = b_pack[1]
+        a_words[1, wave, lane_partner, 0] = a_pack[2]
+        a_words[1, wave, lane_partner, 1] = a_pack[3]
+        b_words[1, wave, lane_partner, 0] = b_pack[2]
+        b_words[1, wave, lane_partner, 1] = b_pack[3]
+    else:
+        a_words[1, wave, lane_partner, 2] = a_pack[0]
+        a_words[1, wave, lane_partner, 3] = a_pack[1]
+        b_words[1, wave, lane_partner, 2] = b_pack[0]
+        b_words[1, wave, lane_partner, 3] = b_pack[1]
+        a_words[1, wave, lane, 2] = a_pack[2]
+        a_words[1, wave, lane, 3] = a_pack[3]
+        b_words[1, wave, lane, 2] = b_pack[2]
+        b_words[1, wave, lane, 3] = b_pack[3]
+
+    S.syncthreads()
+
+    for k_base in S.range(0, IN_FEATURES, 32):
+        a_frag_0 = S.view(a_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        next_k0 = k_base + 32
+        if next_k0 < IN_FEATURES:
+            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+
+            if lane_k_quad == 0:
+                a_words[0, wave, lane, 0] = a_pack_0[0]
+                a_words[0, wave, lane, 1] = a_pack_0[1]
+                b_words[0, wave, lane, 0] = b_pack_0[0]
+                b_words[0, wave, lane, 1] = b_pack_0[1]
+                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+            else:
+                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+                a_words[0, wave, lane, 2] = a_pack_0[2]
+                a_words[0, wave, lane, 3] = a_pack_0[3]
+                b_words[0, wave, lane, 2] = b_pack_0[2]
+                b_words[0, wave, lane, 3] = b_pack_0[3]
+
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+
+        a_frag_1 = S.view(a_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        next_k1 = k_base + 48
+        if next_k1 < IN_FEATURES:
+            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+
+            if lane_k_quad == 0:
+                a_words[1, wave, lane, 0] = a_pack_1[0]
+                a_words[1, wave, lane, 1] = a_pack_1[1]
+                b_words[1, wave, lane, 0] = b_pack_1[0]
+                b_words[1, wave, lane, 1] = b_pack_1[1]
+                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+            else:
+                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+                a_words[1, wave, lane, 2] = a_pack_1[2]
+                a_words[1, wave, lane, 3] = a_pack_1[3]
+                b_words[1, wave, lane, 2] = b_pack_1[2]
+                b_words[1, wave, lane, 3] = b_pack_1[3]
+
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+
+        if k_base + 32 < IN_FEATURES:
+            S.syncthreads()
+
+    for idx in S.range(16):
+        row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+        col = out_col_base + lane_row
+        value = c_lane[idx] + S.convert(EXTRA_BIAS[col], S.f32)
+        if value < S.convert(0.0, S.f32):
+            value = S.convert(0.0, S.f32)
+        Y[row, col] = S.convert(value, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, bias_shape):
+        super().__init__()
+        self.gemm = nn.Linear(in_features, out_features, bias=False)
+        self.bias = nn.Parameter(torch.randn(bias_shape))
+        self._weight_cache = None
+        self._bias_cache = None
+        self._weight_cache_ptr = None
+        self._bias_cache_ptr = None
+        self._cache_device = None
+
+    def _refresh_caches(self, x: torch.Tensor):
+        device = x.device
+        dtype = torch.bfloat16
+        weight_ptr = self.gemm.weight.data_ptr()
+        bias_ptr = self.bias.data_ptr()
+        need_rebuild = (
+            self._weight_cache is None
+            or self._bias_cache is None
+            or self._cache_device != device
+            or self._weight_cache_ptr != weight_ptr
+            or self._bias_cache_ptr != bias_ptr
+        )
+        if need_rebuild:
+            self._weight_cache = torch.empty((OUT_FEATURES, IN_FEATURES), device=device, dtype=dtype)
+            self._bias_cache = torch.empty((OUT_FEATURES,), device=device, dtype=dtype)
+            self._cache_device = device
+            self._weight_cache_ptr = weight_ptr
+            self._bias_cache_ptr = bias_ptr
+        self._weight_cache.copy_(self.gemm.weight.detach().to(device=device, dtype=dtype))
+        self._bias_cache.copy_(self.bias.detach().to(device=device, dtype=dtype))
+
+    def forward(self, x):
+        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16:
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+        if tuple(self.bias.shape) != (OUT_FEATURES,):
+            raise RuntimeError("This fused kernel only supports the benchmark bias shape.")
+        if not x.is_contiguous():
+            x = x.contiguous()
+        self._refresh_caches(x)
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+        fused_kernel[_launch](x, self._weight_cache, self._bias_cache, y)
+        return y
+
+codex
+I’m patching only `output_model_new.py` now. The edit keeps the existing MFMA/LDS schedule intact and narrows the resource descriptors to row views so the unconditional prefetches are safe.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..db39dd1876093509330612370d50186e06e88c70
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,9 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    row_range_bytes = S.convert(IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X[x_row], row_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W[w_row], row_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -52,10 +53,8 @@
+ 
+     lane_partner = lane ^ 32
+ 
+-    a_src_elem = x_row * IN_FEATURES + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -78,10 +77,8 @@
+         b_words[0, wave, lane, 2] = b_pack[2]
+         b_words[0, wave, lane, 3] = b_pack[3]
+ 
+-    a_src_elem = x_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -111,32 +108,29 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +139,34 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..db39dd1876093509330612370d50186e06e88c70
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,9 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    row_range_bytes = S.convert(IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X[x_row], row_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W[w_row], row_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -52,10 +53,8 @@
+ 
+     lane_partner = lane ^ 32
+ 
+-    a_src_elem = x_row * IN_FEATURES + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -78,10 +77,8 @@
+         b_words[0, wave, lane, 2] = b_pack[2]
+         b_words[0, wave, lane, 3] = b_pack[3]
+ 
+-    a_src_elem = x_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -111,32 +108,29 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +139,34 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+codex
+The first implementation is in place. I’m running the round-local validation command exactly as provided; if it fails, I’ll fix only the concrete issue surfaced by that run.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..db39dd1876093509330612370d50186e06e88c70
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,9 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    row_range_bytes = S.convert(IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X[x_row], row_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W[w_row], row_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -52,10 +53,8 @@
+ 
+     lane_partner = lane ^ 32
+ 
+-    a_src_elem = x_row * IN_FEATURES + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -78,10 +77,8 @@
+         b_words[0, wave, lane, 2] = b_pack[2]
+         b_words[0, wave, lane, 3] = b_pack[3]
+ 
+-    a_src_elem = x_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -111,32 +108,29 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +139,34 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+ exited 1 in 3489ms:
+/tmp/tmpxbn55rgo.py:45:14: error: Unimplemented: 'make_rsrc() expects a tensor argument'
+   45 |     x_rsrc = S.amdgpu.make_rsrc(X[x_row], row_range_bytes)
+      |              ^
+/tmp/tmpxbn55rgo.py:45:5: error: Unimplemented: 'Failed to generate expression for assignment'
+   45 |     x_rsrc = S.amdgpu.make_rsrc(X[x_row], row_range_bytes)
+      |     ^
+/tmp/tmpxbn55rgo.py:46:14: error: Unimplemented: 'make_rsrc() expects a tensor argument'
+   46 |     w_rsrc = S.amdgpu.make_rsrc(W[w_row], row_range_bytes)
+      |              ^
+/tmp/tmpxbn55rgo.py:46:5: error: Unimplemented: 'Failed to generate expression for assignment'
+   46 |     w_rsrc = S.amdgpu.make_rsrc(W[w_row], row_range_bytes)
+      |     ^
+/tmp/tmpxbn55rgo.py:58:14: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+   58 |     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+      |              ^
+/tmp/tmpxbn55rgo.py:58:5: error: Unimplemented: 'Failed to generate expression for assignment'
+   58 |     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+      |     ^
+/tmp/tmpxbn55rgo.py:59:14: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+   59 |     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+      |              ^
+/tmp/tmpxbn55rgo.py:59:5: error: Unimplemented: 'Failed to generate expression for assignment'
+   59 |     b_pack =pu.raw_buffzero, b_src_o/tmp/tmpxbn55rgo.py:62:9:, lane,ck[0]
+      |         ^rds[0, waane, 1]ck[1]
+      |         ^
+     b_ = b_pac: error: Unimplemented: 'Failed to generate expression for assignment'
+   65 |         ave, lane, ack[1]
+      9: error: Unimplemented: 'Failed to generate expression for assignment'
+   66 | a_worack[2]
+      |         ^
+9: error: Unimplemented: 'Failed to generate expression for assignment'
+s[0, wave, lane_r, 1] = a_pack[3]
+      |         ^
+/tmp/tmpxbn55rgo.py:Unimplemented: 'Failed to generate expression for assignment'
+   68 |  ds[0, wave, lane_partner, 0] = b_pack[2]:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   69 |     ords[0, wae_partner/tmp/tmpxbn55rgo.py:71:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   71 a_words[0,e_partner, 2]pack[0/tmp/tmpxbn55rgo.py:72:9:        a lane_partner,ck[1]
+      error: Unimplemented: 'Failed to generate expression for assignment'
+   73 |    _partner, 2]ack[0]
+      error: Unimplemented: 'Failed to generate expression for assignment'
+   74ords[0, wave, lane_partner, 3] = b_pack[1]
+      |         ^
+/tmp/tmpxbn55rgo.py:75:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   75 |         a_words[0, wave, lane, 2] = a_pack[2]
+      |         ^
+/tmp/tmpxbn55rgo.py:76:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   76 |         a_words[0, wave, lane, 3] = a_pack[3]
+      |         ^
+/tmp/tmpxbn55rgo.py:77:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   77 |         b_words[0, wave, lane, 2] = b_pack[2]
+      |         ^
+/tmp/tmpxbn55rgo.py:78:9: error:        b3] = b_pack[3]
+   82 |     a_pack _rsrc, z_off, 0)
+82:5: error: Unimplemented: 'Failed to generate expression for assignment'
+   82 | ack = S.amdgpu.rrsrc, zero,off, 0)
+      |     ^
+/tmp/tmpxbn55rgo.py:83:14: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+   83 |     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+      |              ^
+/tmp/tmpxbn55rgo.py:83:5: error: Unimplemented: 'Failed to generate expression for assignment'
+   83 |     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+      |     ^
+error: Unimplemented: 'Failed to generate expression for assignment'
+   86 |       wave, l0] = a_k[0]
+      |         ^
+/tmp/tmpxbn55rgo.py  a_word, 1] 1]
+      |         ^
+
+   88 |  , lane,    89 |     ds[1, wa b_pack
+   90 |         a_words[1, wne_par2]
+      |         ^
+/tmp/tmpxbn55rgo.py:91:9: error: Unimplemented: 'Failed to generate expression for assignment'     a_ve, laner, 1] = a_pack[3]
+      |         ^
+/tmp/tmpxbn55rgo.py:92:9       b_words_partner, 0] = b]
+      |         ^
+/tmp/tmpxbn55rgo.py93 |        [1, wave, lane_partner, 1] = b_pack[3]
+      |         ^
+/tmp/tmpxbn55rgo.py:95:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   95 |         a_words[1, wave, la, 2] = a]
+      |         ^
+/tmp/tmpxbn55rgo.py:96:9       a_wordsrtner, 3ck[1]
+      |         ^
+/tmp/tmpxbn55rgo.py:97:   97 |         b_wore, lane_par] = b_pack[0]
+      |         ^
+/tmp/tmpxbn55rgo.py:98:9: error: Unimplemented: 'Failed to generate expression for assignment'
+ds[1, wave, lane_partner, 3] = b_p9: error: Unimplemented: 'Failed to generate expression for assignment'
+   99 |         a_words[1, wave, lane, 2] = a_pack[2]
+      |         ^
+/tmp/tmpxbn55rgo.py:100:9: error: Unimplemented: 'Failed to generate expression for assignment'
+  100 |         a_words[1, wave, lane, 3] = a_pack[3]
+      |         ^
+/tmp/tmpxbn55rgo.py:101:9: error: Unimplemented: 'Failed to generate expression for assignment'
+  101 |         b_words[1, wave, lane, 2] = b_pack[/tmp/tmpxbn55rgo.py:102:9: error: Unimplemented: 'Failed to generate expression for assignment'       b_words[1, wave, l= b_pack[3  113 |     S.amdgpu._load_x4(0)
+      |                    ^
+error: Unimplemented: 'Failed to generate expression for assignment'
+  113 |       0 = S.amdgpufer_loa_rsrc, zero, a_src_off
+      |         ^
+/tmp/tmpxbn55rgo.py:114 |        aw_buffer_loadrc, zero, b_)
+      |                    ^
+/tmp/tmpxbn55rgo.py:114:9: error:       b_pa= S.ambuffer_load_x, zero, b_src_off/tmp/tmpxbn55rgo.py:117  117 |      wave, lanp0[0]
+      |             ^
+/tmp/tmpxbn55rgo.py:118:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  118 |   = a_pack_0[ error: Unimplemented: 'Failed to generate expression for assignment'
+  119 |        0] = b_pa/tmp/tmpxbn55rgo.py:120:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  120 |     rds[0, wa_pack_0[1]
+      |             ^
+/tmp/tmpxbn55rgo.py:121:13: error: Unimplemented: 'Failed to generate expression for assignment'
+      a_wopartner, 0] =[2]
+      |             ^
+/tmp/tmpxbn55rgo.py:122:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  122 |  s[0, wave, lane_partner, 1]13: error: Unimplemented: 'Failed to generate expression for assignment'
+  123 |             b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+      |             ^
+/tmp/tmpxbn55rgo.py:124:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  124 |             b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+      |             ^
+/tmp/tmpxbn55rgo.py:126:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  126 |             a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+      |             ^
+/tmp/tmpxbn55rgo.py:127:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  127 |             a_words[0, wave, lane_partner, 3] = a_p:128:13: error: Unimplemented: 'Failed to generate expression for assignment'      b_e_partner_pack_0[ error: Unimplemented: 'Failed to generate expression for assignment'
+  129  b_words[0, w_partner, :130:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  130 |             a_ave, lane,_0[2]
+      |             ^
+  a_words[0, wave, lane= a_pack_0[3]
+      |             ^
+error: Unimplemented: 'Failed to generate expression for assignment'
+  [0, wave, lane,        rds[0,ne, 3] = b_pac/tmp/tmpxbn55rgo.py:144:20: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+.amdgpu.raw_buf_x4(x_rsrc, zff_1, 0)
+      |                    ^
+/tmp/tmpxbn55rgo.py:144:9: error: Unimplemented: 'Failed to generate expression for assignment'
+  144 |    .amdgpu.raw_buffer_load_x4(ero, a_src_off_1, 0)
+      |         ^
+/tmp/tmpxbn55rgo.py:145:20: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+  145 |         b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+      |                    ^
+/tmp/tmpxbn55rgo.py:145:9: error: Unimplemented: 'Failed to generate expression for assignment'
+  145 |         b_pack_1 = S.amw_buffer_ zero, b_src_off_1, 0)
+      | error: Unimplemented: 'Failed to generate expression for assignment'
+  148   a_worwave, lane, 0] = a_p      |             ^
+/tmp/tmpxbn55rgo.py:149:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  149 |     a_words[1, wave, lane, 
+/tmp/tmpxbn55rgo.py:150:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  _words[1, wapack_1[0]
+      |             ^
+/tmp/tmpxbn55rgo.py:151:13: error: Unimplemented: 'Failed to generate expression for assignment'
+     , wane, 1] |             ^
+/tmp/tmpxbn55rgo.py        a_worde, lane_part= a_pack |             a_wo, wave, la, 1] = a_pack_1[3        wave, lane_partner, 0] = b_       back_1[3]
+      :157:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  157 |  |             ^
+/tmp/tmpxbn55rgo.py:, wave, lane_partner, 3] = a_pack_1[1]
+      |             ^
+/tmp/tmpxbn55rgo.py:159:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  159 |             b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+      |             ^
+/tmp/tmpxbn55rgo.py:160:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  160 |             b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+      |             ^
+/tmp/tmpxbn55rgo.py:161:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  161 |             a_words[1, wave, lane, 2] = a_pack_1[2]
+      |             ^
+/tmp/tmpxbn55rgo.py:162:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  162 |             a_words[1, wave, lane, 3] = a_pack_1[3]
+      |             ^
+/tmp/tmpxbn55rgo.py:163:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  163 |             b_words[1, wave, lane, 2] = b_pack_1[2]
+      |             ^
+/tmp/tmpxbn55rgo.py:164:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  164 |             b_words[1, wave, lane, 3] = b_pack_1[3]
+      |             ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+codex
+Validation is running now. Once it returns, I’ll inspect only the round-local output and either stop on pass or make one focused fix.
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..db39dd1876093509330612370d50186e06e88c70
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,9 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    row_range_bytes = S.convert(IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X[x_row], row_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W[w_row], row_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -52,10 +53,8 @@
+ 
+     lane_partner = lane ^ 32
+ 
+-    a_src_elem = x_row * IN_FEATURES + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -78,10 +77,8 @@
+         b_words[0, wave, lane, 2] = b_pack[2]
+         b_words[0, wave, lane, 3] = b_pack[3]
+ 
+-    a_src_elem = x_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    b_src_elem = w_row * IN_FEATURES + 16 + lane_k_quad * 8
+-    a_src_off = S.convert(a_src_elem * 2, S.i32)
+-    b_src_off = S.convert(b_src_elem * 2, S.i32)
++    a_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
++    b_src_off = S.convert(32 + lane_k_quad * 16, S.i32)
+     a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off, 0)
+     b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off, 0)
+ 
+@@ -111,32 +108,29 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_0 = S.convert(next_k0 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +139,34 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        b_src_off_1 = S.convert(next_k1 * 2 + lane_k_quad * 16, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+codex
+The failure is specific: `make_rsrc` won’t accept `X[x_row]`/`W[w_row]` directly here. I can keep the same optimization by using the full-tensor base descriptor with a per-thread dynamic byte `range` ending at that row boundary, which preserves the unconditional loads safely.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..c11c5aa9c4a46ec9ade19672a816cf2cad889b21
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,10 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    x_range_bytes = S.convert((x_row + 1) * IN_FEATURES * 2, S.i32)
++    w_range_bytes = S.convert((w_row + 1) * IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, x_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W, w_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -111,32 +113,31 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
++        b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +146,36 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
++        b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..c11c5aa9c4a46ec9ade19672a816cf2cad889b21
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,10 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    x_range_bytes = S.convert((x_row + 1) * IN_FEATURES * 2, S.i32)
++    w_range_bytes = S.convert((w_row + 1) * IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, x_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W, w_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -111,32 +113,31 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
++        b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +146,36 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
++        b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+codex
+I’ve narrowed the fix to just the descriptor construction. Re-running the same round-local validation now.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..c11c5aa9c4a46ec9ade19672a816cf2cad889b21
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,10 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    x_range_bytes = S.convert((x_row + 1) * IN_FEATURES * 2, S.i32)
++    w_range_bytes = S.convert((w_row + 1) * IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, x_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W, w_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -111,32 +113,31 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
++        b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +146,36 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
++        b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..c11c5aa9c4a46ec9ade19672a816cf2cad889b21
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,10 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    x_range_bytes = S.convert((x_row + 1) * IN_FEATURES * 2, S.i32)
++    w_range_bytes = S.convert((w_row + 1) * IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, x_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W, w_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -111,32 +113,31 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
++        b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +146,36 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
++        b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+ succeeded in 6175ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+codex
+The validation command completed successfully. I’m checking the round-local `debug_eval.jsonl` for the recorded correctness status and then I’ll stop.
+exec
+/bin/bash -lc 'tail -n 5 /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/debug_eval.jsonl' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782389552.24422, "run_ended_at": 1782389556.207974, "run_wall_time_s": 3.963754, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 15.8, "ref_runtime_us": 0.277, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782389552.244325, "event_type": "eval_start"}, {"timestamp": 1782389552.244402, "event_type": "load_reference_model_start"}, {"timestamp": 1782389552.594806, "event_type": "load_reference_model_end", "duration_s": 0.350389}, {"timestamp": 1782389552.594893, "event_type": "custom_model_import_start"}, {"timestamp": 1782389552.652501, "event_type": "custom_model_import_end", "duration_s": 0.057597}, {"timestamp": 1782389552.652506, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782389553.283472, "event_type": "instantiate_and_to_device_end", "duration_s": 0.630944}, {"timestamp": 1782389553.283482, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782389554.159769, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 0.876274}, {"timestamp": 1782389554.159775, "event_type": "correctness_check_start"}, {"timestamp": 1782389555.436975, "event_type": "correctness_check_end", "duration_s": 1.277176}, {"timestamp": 1782389555.48085, "event_type": "candidate_profile_start"}, {"timestamp": 1782389556.136703, "event_type": "candidate_profile_end", "duration_s": 0.655828}, {"timestamp": 1782389556.177006, "event_type": "reference_profile_start"}, {"timestamp": 1782389556.206958, "event_type": "reference_profile_end", "duration_s": 0.029932}, {"timestamp": 1782389556.207141, "event_type": "cleanup_start"}, {"timestamp": 1782389556.207748, "event_type": "cleanup_end", "duration_s": 0.000601}, {"timestamp": 1782389556.20776, "event_type": "eval_end", "duration_s": 3.963426}], "load_reference_model_s": 0.350389, "custom_model_import_compile_s": 0.057597, "instantiate_and_to_device_s": 0.630944, "first_candidate_invocation_s": 0.876274, "correctness_check_s": 1.277176, "candidate_profile_wall_time_s": 0.655828, "reference_profile_wall_time_s": 0.029932, "cleanup_s": 0.000601, "eval_total_wall_time_s": 3.963426, "compile_time_s": 0.933871, "profile_time_s": 0.68576}}, "runtime_stats": {"mean": 15.8, "std": 0.0, "min": 15.8, "max": 15.8, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.277, "std": 0.0, "min": 0.277, "max": 0.277, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782389552.244325, "event_type": "eval_start"}, {"timestamp": 1782389552.244402, "event_type": "load_reference_model_start"}, {"timestamp": 1782389552.594806, "event_type": "load_reference_model_end", "duration_s": 0.350389}, {"timestamp": 1782389552.594893, "event_type": "custom_model_import_start"}, {"timestamp": 1782389552.652501, "event_type": "custom_model_import_end", "duration_s": 0.057597}, {"timestamp": 1782389552.652506, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782389553.283472, "event_type": "instantiate_and_to_device_end", "duration_s": 0.630944}, {"timestamp": 1782389553.283482, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782389554.159769, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 0.876274}, {"timestamp": 1782389554.159775, "event_type": "correctness_check_start"}, {"timestamp": 1782389555.436975, "event_type": "correctness_check_end", "duration_s": 1.277176}, {"timestamp": 1782389555.48085, "event_type": "candidate_profile_start"}, {"timestamp": 1782389556.136703, "event_type": "candidate_profile_end", "duration_s": 0.655828}, {"timestamp": 1782389556.177006, "event_type": "reference_profile_start"}, {"timestamp": 1782389556.206958, "event_type": "reference_profile_end", "duration_s": 0.029932}, {"timestamp": 1782389556.207141, "event_type": "cleanup_start"}, {"timestamp": 1782389556.207748, "event_type": "cleanup_end", "duration_s": 0.000601}, {"timestamp": 1782389556.20776, "event_type": "eval_end", "duration_s": 3.963426}], "load_reference_model_s": 0.350389, "custom_model_import_compile_s": 0.057597, "instantiate_and_to_device_s": 0.630944, "first_candidate_invocation_s": 0.876274, "correctness_check_s": 1.277176, "candidate_profile_wall_time_s": 0.655828, "reference_profile_wall_time_s": 0.029932, "cleanup_s": 0.000601, "eval_total_wall_time_s": 3.963426, "compile_time_s": 0.933871, "profile_time_s": 0.68576}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..c11c5aa9c4a46ec9ade19672a816cf2cad889b21
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,10 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    x_range_bytes = S.convert((x_row + 1) * IN_FEATURES * 2, S.i32)
++    w_range_bytes = S.convert((w_row + 1) * IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, x_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W, w_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -111,32 +113,31 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
++        b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +146,36 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
++        b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+codex
+Implemented the round-3 change in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py). The kernel now uses per-thread dynamic `range` values on the full-tensor raw buffer descriptors so the unconditional K-prefetch `raw_buffer_load_x4` calls safely zero-fill past the row boundary, and the explicit in-loop OOB guards were removed.
+
+Validation passed with the required command. The round-local result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/debug_eval.jsonl) reports `compiled: true` and `correctness: true`.
+diff --git a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+index 62c9b4191a286929aebdd3b9a7ba0f5bc8e3c696..c11c5aa9c4a46ec9ade19672a816cf2cad889b21
+--- a/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p76/optimization_rounds_no_invariants/round3/output_model_new.py
+@@ -41,8 +41,10 @@
+     x_row = out_row_base + lane_row
+     w_row = out_col_base + lane_row
+ 
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(BATCH_SIZE * IN_FEATURES * 2, S.i32))
+-    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(OUT_FEATURES * IN_FEATURES * 2, S.i32))
++    x_range_bytes = S.convert((x_row + 1) * IN_FEATURES * 2, S.i32)
++    w_range_bytes = S.convert((w_row + 1) * IN_FEATURES * 2, S.i32)
++    x_rsrc = S.amdgpu.make_rsrc(X, x_range_bytes)
++    w_rsrc = S.amdgpu.make_rsrc(W, w_range_bytes)
+ 
+     a_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+     b_words = S.make_shared((2, WAVES_PER_BLOCK, LANES_PER_WAVE, 4), S.u32)
+@@ -111,32 +113,31 @@
+         b_frag_0 = S.view(b_words[0, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k0 = k_base + 32
+-        if next_k0 < IN_FEATURES:
+-            a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
+-            a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
+-            b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
+-            a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
+-            b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
++        a_src_elem_0 = x_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        b_src_elem_0 = w_row * IN_FEATURES + next_k0 + lane_k_quad * 8
++        a_src_off_0 = S.convert(a_src_elem_0 * 2, S.i32)
++        b_src_off_0 = S.convert(b_src_elem_0 * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_0, 0)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_0, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[0, wave, lane, 0] = a_pack_0[0]
+-                a_words[0, wave, lane, 1] = a_pack_0[1]
+-                b_words[0, wave, lane, 0] = b_pack_0[0]
+-                b_words[0, wave, lane, 1] = b_pack_0[1]
+-                a_words[0, wave, lane_partner, 0] = a_pack_0[2]
+-                a_words[0, wave, lane_partner, 1] = a_pack_0[3]
+-                b_words[0, wave, lane_partner, 0] = b_pack_0[2]
+-                b_words[0, wave, lane_partner, 1] = b_pack_0[3]
+-            else:
+-                a_words[0, wave, lane_partner, 2] = a_pack_0[0]
+-                a_words[0, wave, lane_partner, 3] = a_pack_0[1]
+-                b_words[0, wave, lane_partner, 2] = b_pack_0[0]
+-                b_words[0, wave, lane_partner, 3] = b_pack_0[1]
+-                a_words[0, wave, lane, 2] = a_pack_0[2]
+-                a_words[0, wave, lane, 3] = a_pack_0[3]
+-                b_words[0, wave, lane, 2] = b_pack_0[2]
+-                b_words[0, wave, lane, 3] = b_pack_0[3]
++        if lane_k_quad == 0:
++            a_words[0, wave, lane, 0] = a_pack_0[0]
++            a_words[0, wave, lane, 1] = a_pack_0[1]
++            b_words[0, wave, lane, 0] = b_pack_0[0]
++            b_words[0, wave, lane, 1] = b_pack_0[1]
++            a_words[0, wave, lane_partner, 0] = a_pack_0[2]
++            a_words[0, wave, lane_partner, 1] = a_pack_0[3]
++            b_words[0, wave, lane_partner, 0] = b_pack_0[2]
++            b_words[0, wave, lane_partner, 1] = b_pack_0[3]
++        else:
++            a_words[0, wave, lane_partner, 2] = a_pack_0[0]
++            a_words[0, wave, lane_partner, 3] = a_pack_0[1]
++            b_words[0, wave, lane_partner, 2] = b_pack_0[0]
++            b_words[0, wave, lane_partner, 3] = b_pack_0[1]
++            a_words[0, wave, lane, 2] = a_pack_0[2]
++            a_words[0, wave, lane, 3] = a_pack_0[3]
++            b_words[0, wave, lane, 2] = b_pack_0[2]
++            b_words[0, wave, lane, 3] = b_pack_0[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+@@ -145,38 +146,36 @@
+         b_frag_1 = S.view(b_words[1, wave, lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+         next_k1 = k_base + 48
+-        if next_k1 < IN_FEATURES:
+-            a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
+-            a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
+-            b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
+-            a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
+-            b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
++        a_src_elem_1 = x_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        b_src_elem_1 = w_row * IN_FEATURES + next_k1 + lane_k_quad * 8
++        a_src_off_1 = S.convert(a_src_elem_1 * 2, S.i32)
++        b_src_off_1 = S.convert(b_src_elem_1 * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, a_src_off_1, 0)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, b_src_off_1, 0)
+ 
+-            if lane_k_quad == 0:
+-                a_words[1, wave, lane, 0] = a_pack_1[0]
+-                a_words[1, wave, lane, 1] = a_pack_1[1]
+-                b_words[1, wave, lane, 0] = b_pack_1[0]
+-                b_words[1, wave, lane, 1] = b_pack_1[1]
+-                a_words[1, wave, lane_partner, 0] = a_pack_1[2]
+-                a_words[1, wave, lane_partner, 1] = a_pack_1[3]
+-                b_words[1, wave, lane_partner, 0] = b_pack_1[2]
+-                b_words[1, wave, lane_partner, 1] = b_pack_1[3]
+-            else:
+-                a_words[1, wave, lane_partner, 2] = a_pack_1[0]
+-                a_words[1, wave, lane_partner, 3] = a_pack_1[1]
+-                b_words[1, wave, lane_partner, 2] = b_pack_1[0]
+-                b_words[1, wave, lane_partner, 3] = b_pack_1[1]
+-                a_words[1, wave, lane, 2] = a_pack_1[2]
+-                a_words[1, wave, lane, 3] = a_pack_1[3]
+-                b_words[1, wave, lane, 2] = b_pack_1[2]
+-                b_words[1, wave, lane, 3] = b_pack_1[3]
++        if lane_k_quad == 0:
++            a_words[1, wave, lane, 0] = a_pack_1[0]
++            a_words[1, wave, lane, 1] = a_pack_1[1]
++            b_words[1, wave, lane, 0] = b_pack_1[0]
++            b_words[1, wave, lane, 1] = b_pack_1[1]
++            a_words[1, wave, lane_partner, 0] = a_pack_1[2]
++            a_words[1, wave, lane_partner, 1] = a_pack_1[3]
++            b_words[1, wave, lane_partner, 0] = b_pack_1[2]
++            b_words[1, wave, lane_partner, 1] = b_pack_1[3]
++        else:
++            a_words[1, wave, lane_partner, 2] = a_pack_1[0]
++            a_words[1, wave, lane_partner, 3] = a_pack_1[1]
++            b_words[1, wave, lane_partner, 2] = b_pack_1[0]
++            b_words[1, wave, lane_partner, 3] = b_pack_1[1]
++            a_words[1, wave, lane, 2] = a_pack_1[2]
++            a_words[1, wave, lane, 3] = a_pack_1[3]
++            b_words[1, wave, lane, 2] = b_pack_1[2]
++            b_words[1, wave, lane, 3] = b_pack_1[3]
+ 
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+         c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+-        if k_base + 32 < IN_FEATURES:
+-            S.syncthreads()
++        S.syncthreads()
+ 
+     for idx in S.range(16):
+         row = out_row_base + (lane_k_quad * 8) + ((idx & 3) * 2) + (((idx >> 2) & 1) * 16) + (idx >> 3)
+
+tokens used
+66,464

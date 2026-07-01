@@ -1,0 +1,36 @@
+The Split-K implementation is complete. Here's a summary:
+
+## Implementation Summary
+
+### Key Technical Challenges Resolved
+
+1. **Buffer Resource 32-bit Range Limit**
+   - The `buffer_atomic_add_f32` operation uses buffer resource descriptors with a u32 range limit (~4GB max bytes)
+   - The original benchmark requires an 8GB workspace, exceeding this limit
+   - **Solution**: Implemented tiled processing that splits GEMM_M into tiles, each with a workspace fitting within 4GB
+
+2. **Split-K Implementation**
+   - Block decomposition: `linear_block_id = tile_block_id * SPLIT_K_SLICES + split_k_id`
+   - Channel partition: `c_per_split = ceil_div(in_channels, SPLIT_K_SLICES)`
+   - K dimension split into 2 slices, each handling 32 of 64 input channels
+   - Atomic reduction to fp32 workspace using `buffer_atomic_add_f32`
+
+3. **Workspace Management**
+   - fp32 workspace for Split-K reduction (maintains numerical precision)
+   - GEMM-major layout: `linear_idx = row * GEMM_N + col`
+   - Separate finalize kernel to convert fp32 workspace to bf16 output
+
+### Files Updated
+- `/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p87/optimization_rounds_claude/round2/output_model_new.py`
+  - Added tiled kernels `fused_kernel_mfma_splitk_tiled` and `finalize_kernel_tiled`
+  - Updated `ModelNew` to automatically use tiled processing when workspace exceeds 4GB
+  - Falls back to single-kernel path for smaller workspaces
+
+### Validation Results
+- **Accuracy**: PASS (max_diff = 0.0146 < 0.1 tolerance)
+- **Performance**: The tiled Split-K approach is slower than PyTorch for this problem due to:
+  - Multiple kernel launches (3 tiles × 2 kernels)
+  - Atomic operations to global memory
+  - Workspace memory bandwidth overhead
+  
+  This is expected - Split-K is beneficial for K-bound problems with large K dimensions. For K=64, the overhead outweighs the parallelism benefit.

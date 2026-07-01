@@ -1,0 +1,2060 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efdfa-ac9d-7772-aac9-31631fa46896
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+I’m reading the starting kernel and the nearest local MFMA example first, then I’ll move directly into editing `output_model_new.py` for the software-pipelined variant.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+M = 2048
+K = 8192
+N = 4096
+
+BLOCK_M = 64
+BLOCK_N = 64
+BLOCK_K = 16
+WAVES_PER_BLOCK = 4
+THREADS_PER_BLOCK = 256
+A_RANGE_BYTES = M * K * 2
+B_RANGE_BYTES = K * N * 2
+C_RANGE_BYTES = M * N * 2
+
+
+@substrate.jit
+def gemm_kernel(
+    A: S.Tensor((M * K,), S.bf16),
+    BT: S.Tensor((N * K,), S.bf16),
+    C: S.Tensor((M * N,), S.bf16),
+):
+    tid = S.thread_id(0)
+    lane = tid % 64
+    warp = tid >> 6
+    warp_row = warp >> 1
+    warp_col = warp & 1
+
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    zero = S.convert(0, S.i32)
+    a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+    bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+
+    a_shared = S.make_shared((2, 64, 4), S.u32)
+    b_shared = S.make_shared((2, 64, 4), S.u32)
+    acc = S.full((16,), 0.0, S.f32)
+
+    for k_tile in S.range(K // BLOCK_K):
+        if tid < 128:
+            frag = tid
+            wave_row_id = frag >> 6
+            row_in_wave = frag & 31
+            chunk = (frag >> 5) & 1
+            global_row = block_row + wave_row_id * 32 + row_in_wave
+            global_col = k_tile * BLOCK_K + chunk * 8
+            elem_offset = global_row * K + global_col
+            byte_offset = S.convert(elem_offset * 2, S.i32)
+            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+            lane_lo = row_in_wave
+            lane_hi = row_in_wave + 32
+            base = chunk * 2
+            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+        else:
+            frag = tid - 128
+            wave_col_id = frag >> 6
+            col_in_wave = frag & 31
+            chunk = (frag >> 5) & 1
+            global_col = block_col + wave_col_id * 32 + col_in_wave
+            global_k = k_tile * BLOCK_K + chunk * 8
+            elem_offset = global_col * K + global_k
+            byte_offset = S.convert(elem_offset * 2, S.i32)
+            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+            lane_lo = col_in_wave
+            lane_hi = col_in_wave + 32
+            base = chunk * 2
+            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
+
+        S.syncthreads()
+
+        a_words = a_shared[warp_row, lane]
+        b_words = b_shared[warp_col, lane]
+        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+
+        S.syncthreads()
+
+    out_col = block_col + warp_col * 32 + (lane & 31)
+    row_base = block_row + warp_row * 32 + ((lane >> 5) * 4)
+    for i in S.range(16):
+        out_row = row_base + (i >> 2) * 8 + (i & 3)
+        C[out_row * N + out_col] = S.convert(acc[i], S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._grid = ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
+
+    def forward(self, A, B):
+        if tuple(A.shape) != (M, K) or tuple(B.shape) != (K, N):
+            raise ValueError(f"Expected A={(M, K)} and B={(K, N)}, got {tuple(A.shape)} and {tuple(B.shape)}")
+        if A.dtype != torch.bfloat16 or B.dtype != torch.bfloat16:
+            raise ValueError(f"Expected bf16 inputs, got {A.dtype} and {B.dtype}")
+
+        A_flat = A.contiguous().view(-1)
+        B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+        C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+        C_flat = C.view(-1)
+        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
+        return C
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+I have the starting point and MFMA usage pattern. Next I’m patching `output_model_new.py` directly to add a double-buffered K pipeline with overlapped global loads, LDS staging, and MFMA consumption.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+M = 2048
+K = 8192
+N = 4096
+
+BLOCK_M = 64
+BLOCK_N = 64
+BLOCK_K = 16
+WAVES_PER_BLOCK = 4
+THREADS_PER_BLOCK = 256
+A_RANGE_BYTES = M * K * 2
+B_RANGE_BYTES = K * N * 2
+C_RANGE_BYTES = M * N * 2
+
+
+@substrate.jit
+def gemm_kernel(
+    A: S.Tensor((M * K,), S.bf16),
+    BT: S.Tensor((N * K,), S.bf16),
+    C: S.Tensor((M * N,), S.bf16),
+):
+    tid = S.thread_id(0)
+    lane = tid % 64
+    warp = tid >> 6
+    warp_row = warp >> 1
+    warp_col = warp & 1
+
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    zero = S.convert(0, S.i32)
+    a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+    bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+
+    a_shared = S.make_shared((2, 64, 4), S.u32)
+    b_shared = S.make_shared((2, 64, 4), S.u32)
+    acc = S.full((16,), 0.0, S.f32)
+
+    for k_tile in S.range(K // BLOCK_K):
+        if tid < 128:
+            frag = tid
+            wave_row_id = frag >> 6
+            row_in_wave = frag & 31
+            chunk = (frag >> 5) & 1
+            global_row = block_row + wave_row_id * 32 + row_in_wave
+            global_col = k_tile * BLOCK_K + chunk * 8
+            elem_offset = global_row * K + global_col
+            byte_offset = S.convert(elem_offset * 2, S.i32)
+            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+            lane_lo = row_in_wave
+            lane_hi = row_in_wave + 32
+            base = chunk * 2
+            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+        else:
+            frag = tid - 128
+            wave_col_id = frag >> 6
+            col_in_wave = frag & 31
+            chunk = (frag >> 5) & 1
+            global_col = block_col + wave_col_id * 32 + col_in_wave
+            global_k = k_tile * BLOCK_K + chunk * 8
+            elem_offset = global_col * K + global_k
+            byte_offset = S.convert(elem_offset * 2, S.i32)
+            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+            lane_lo = col_in_wave
+            lane_hi = col_in_wave + 32
+            base = chunk * 2
+            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
+
+        S.syncthreads()
+
+        a_words = a_shared[warp_row, lane]
+        b_words = b_shared[warp_col, lane]
+        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+
+        S.syncthreads()
+
+    out_col = block_col + warp_col * 32 + (lane & 31)
+    row_base = block_row + warp_row * 32 + ((lane >> 5) * 4)
+    for i in S.range(16):
+        out_row = row_base + (i >> 2) * 8 + (i & 3)
+        C[out_row * N + out_col] = S.convert(acc[i], S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._grid = ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
+
+    def forward(self, A, B):
+        if tuple(A.shape) != (M, K) or tuple(B.shape) != (K, N):
+            raise ValueError(f"Expected A={(M, K)} and B={(K, N)}, got {tuple(A.shape)} and {tuple(B.shape)}")
+        if A.dtype != torch.bfloat16 or B.dtype != torch.bfloat16:
+            raise ValueError(f"Expected bf16 inputs, got {A.dtype} and {B.dtype}")
+
+        A_flat = A.contiguous().view(-1)
+        B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+        C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+        C_flat = C.view(-1)
+        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
+        return C
+
+codex
+I’m editing the kernel now. The change keeps the same 4-wave MFMA mapping, but reworks the K schedule into a two-tile pipeline with ping-pong LDS buffers and overlapped prefetches into the buffer that was just consumed.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+deleted file mode 100644
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ /dev/null
+@@ -1,116 +0,0 @@
+-import torch
+-import torch.nn as nn
+-
+-import substrate
+-import substrate.language as S
+-
+-
+-M = 2048
+-K = 8192
+-N = 4096
+-
+-BLOCK_M = 64
+-BLOCK_N = 64
+-BLOCK_K = 16
+-WAVES_PER_BLOCK = 4
+-THREADS_PER_BLOCK = 256
+-A_RANGE_BYTES = M * K * 2
+-B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+-
+-
+-@substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((M * K,), S.bf16),
+-    BT: S.Tensor((N * K,), S.bf16),
+-    C: S.Tensor((M * N,), S.bf16),
+-):
+-    tid = S.thread_id(0)
+-    lane = tid % 64
+-    warp = tid >> 6
+-    warp_row = warp >> 1
+-    warp_col = warp & 1
+-
+-    block_row = S.block_id(1) * BLOCK_M
+-    block_col = S.block_id(0) * BLOCK_N
+-
+-    zero = S.convert(0, S.i32)
+-    a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+-    bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+-
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
+-    acc = S.full((16,), 0.0, S.f32)
+-
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
+-
+-        S.syncthreads()
+-
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
+-
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+-
+-        S.syncthreads()
+-
+-    out_col = block_col + warp_col * 32 + (lane & 31)
+-    row_base = block_row + warp_row * 32 + ((lane >> 5) * 4)
+-    for i in S.range(16):
+-        out_row = row_base + (i >> 2) * 8 + (i & 3)
+-        C[out_row * N + out_col] = S.convert(acc[i], S.bf16)
+-
+-
+-class ModelNew(nn.Module):
+-    def __init__(self):
+-        super().__init__()
+-        self._grid = ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
+-
+-    def forward(self, A, B):
+-        if tuple(A.shape) != (M, K) or tuple(B.shape) != (K, N):
+-            raise ValueError(f"Expected A={(M, K)} and B={(K, N)}, got {tuple(A.shape)} and {tuple(B.shape)}")
+-        if A.dtype != torch.bfloat16 or B.dtype != torch.bfloat16:
+-            raise ValueError(f"Expected bf16 inputs, got {A.dtype} and {B.dtype}")
+-
+-        A_flat = A.contiguous().view(-1)
+-        B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+-        C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
+-        return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+deleted file mode 100644
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ /dev/null
+@@ -1,116 +0,0 @@
+-import torch
+-import torch.nn as nn
+-
+-import substrate
+-import substrate.language as S
+-
+-
+-M = 2048
+-K = 8192
+-N = 4096
+-
+-BLOCK_M = 64
+-BLOCK_N = 64
+-BLOCK_K = 16
+-WAVES_PER_BLOCK = 4
+-THREADS_PER_BLOCK = 256
+-A_RANGE_BYTES = M * K * 2
+-B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+-
+-
+-@substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((M * K,), S.bf16),
+-    BT: S.Tensor((N * K,), S.bf16),
+-    C: S.Tensor((M * N,), S.bf16),
+-):
+-    tid = S.thread_id(0)
+-    lane = tid % 64
+-    warp = tid >> 6
+-    warp_row = warp >> 1
+-    warp_col = warp & 1
+-
+-    block_row = S.block_id(1) * BLOCK_M
+-    block_col = S.block_id(0) * BLOCK_N
+-
+-    zero = S.convert(0, S.i32)
+-    a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+-    bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+-
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
+-    acc = S.full((16,), 0.0, S.f32)
+-
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
+-
+-        S.syncthreads()
+-
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
+-
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+-
+-        S.syncthreads()
+-
+-    out_col = block_col + warp_col * 32 + (lane & 31)
+-    row_base = block_row + warp_row * 32 + ((lane >> 5) * 4)
+-    for i in S.range(16):
+-        out_row = row_base + (i >> 2) * 8 + (i & 3)
+-        C[out_row * N + out_col] = S.convert(acc[i], S.bf16)
+-
+-
+-class ModelNew(nn.Module):
+-    def __init__(self):
+-        super().__init__()
+-        self._grid = ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS_PER_BLOCK, 1, 1))
+-
+-    def forward(self, A, B):
+-        if tuple(A.shape) != (M, K) or tuple(B.shape) != (K, N):
+-            raise ValueError(f"Expected A={(M, K)} and B={(K, N)}, got {tuple(A.shape)} and {tuple(B.shape)}")
+-        if A.dtype != torch.bfloat16 or B.dtype != torch.bfloat16:
+-            raise ValueError(f"Expected bf16 inputs, got {A.dtype} and {B.dtype}")
+-
+-        A_flat = A.contiguous().view(-1)
+-        B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+-        C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
+-        return C
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..245d012fc73172cb7cf0e497db758d3f06fe2f4a
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -12,11 +12,12 @@
+ BLOCK_M = 64
+ BLOCK_N = 64
+ BLOCK_K = 16
++K_TILES = K // BLOCK_K
++K_TILE_PAIRS = K_TILES // 2
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = 256
+ A_RANGE_BYTES = M * K * 2
+ B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+ 
+ 
+ @substrate.jit
+@@ -38,56 +39,159 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+     bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+ 
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
++    a_shared = S.make_shared((2, 2, 64, 4), S.u32)
++    b_shared = S.make_shared((2, 2, 64, 4), S.u32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
++    if tid < 128:
++        frag = tid
++        wave_row_id = frag >> 6
++        row_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_row = block_row + wave_row_id * 32 + row_in_wave
++        lane_lo = row_in_wave
++        lane_hi = row_in_wave + 32
++        base = chunk * 2
+ 
+-        S.syncthreads()
++        global_col_0 = chunk * 8
++        elem_offset_0 = global_row * K + global_col_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_0, 0)
++        a_shared[0, wave_row_id, lane_lo, base + 0] = packed_0[0]
++        a_shared[0, wave_row_id, lane_lo, base + 1] = packed_0[1]
++        a_shared[0, wave_row_id, lane_hi, base + 0] = packed_0[2]
++        a_shared[0, wave_row_id, lane_hi, base + 1] = packed_0[3]
+ 
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
++        global_col_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_row * K + global_col_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_1, 0)
++        a_shared[1, wave_row_id, lane_lo, base + 0] = packed_1[0]
++        a_shared[1, wave_row_id, lane_lo, base + 1] = packed_1[1]
++        a_shared[1, wave_row_id, lane_hi, base + 0] = packed_1[2]
++        a_shared[1, wave_row_id, lane_hi, base + 1] = packed_1[3]
++    else:
++        frag = tid - 128
++        wave_col_id = frag >> 6
++        col_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_col = block_col + wave_col_id * 32 + col_in_wave
++        lane_lo = col_in_wave
++        lane_hi = col_in_wave + 32
++        base = chunk * 2
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++        global_k_0 = chunk * 8
++        elem_offset_0 = global_col * K + global_k_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_0, 0)
++        b_shared[0, wave_col_id, lane_lo, base + 0] = packed_0[0]
++        b_shared[0, wave_col_id, lane_lo, base + 1] = packed_0[1]
++        b_shared[0, wave_col_id, lane_hi, base + 0] = packed_0[2]
++        b_shared[0, wave_col_id, lane_hi, base + 1] = packed_0[3]
+ 
++        global_k_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_col * K + global_k_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_1, 0)
++        b_shared[1, wave_col_id, lane_lo, base + 0] = packed_1[0]
++        b_shared[1, wave_col_id, lane_lo, base + 1] = packed_1[1]
++        b_shared[1, wave_col_id, lane_hi, base + 0] = packed_1[2]
++        b_shared[1, wave_col_id, lane_hi, base + 1] = packed_1[3]
++
++    S.syncthreads()
++
++    for pair_idx in S.range(K_TILE_PAIRS):
++        even_words_a = a_shared[0, warp_row, lane]
++        even_words_b = b_shared[0, warp_col, lane]
++        even_frag_a = S.view(even_words_a, S.Tensor((2, 4, 1), S.bf16))
++        even_frag_b = S.view(even_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[0], even_frag_b[0], acc)
++
++        next_even_tile = (pair_idx + 1) * 2
++        if next_even_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[0, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[0, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[0, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[0, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[0, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[0, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[0, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[0, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[1], even_frag_b[1], acc)
++
++        odd_words_a = a_shared[1, warp_row, lane]
++        odd_words_b = b_shared[1, warp_col, lane]
++        odd_frag_a = S.view(odd_words_a, S.Tensor((2, 4, 1), S.bf16))
++        odd_frag_b = S.view(odd_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[0], odd_frag_b[0], acc)
++
++        next_odd_tile = next_even_tile + 1
++        if next_odd_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[1, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[1, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[1, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[1, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[1, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[1, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[1, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[1, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[1], odd_frag_b[1], acc)
+         S.syncthreads()
+ 
+     out_col = block_col + warp_col * 32 + (lane & 31)
+@@ -111,6 +215,5 @@
+         A_flat = A.contiguous().view(-1)
+         B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+         C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
++        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C.view(-1))
+         return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..245d012fc73172cb7cf0e497db758d3f06fe2f4a
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -12,11 +12,12 @@
+ BLOCK_M = 64
+ BLOCK_N = 64
+ BLOCK_K = 16
++K_TILES = K // BLOCK_K
++K_TILE_PAIRS = K_TILES // 2
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = 256
+ A_RANGE_BYTES = M * K * 2
+ B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+ 
+ 
+ @substrate.jit
+@@ -38,56 +39,159 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+     bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+ 
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
++    a_shared = S.make_shared((2, 2, 64, 4), S.u32)
++    b_shared = S.make_shared((2, 2, 64, 4), S.u32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
++    if tid < 128:
++        frag = tid
++        wave_row_id = frag >> 6
++        row_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_row = block_row + wave_row_id * 32 + row_in_wave
++        lane_lo = row_in_wave
++        lane_hi = row_in_wave + 32
++        base = chunk * 2
+ 
+-        S.syncthreads()
++        global_col_0 = chunk * 8
++        elem_offset_0 = global_row * K + global_col_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_0, 0)
++        a_shared[0, wave_row_id, lane_lo, base + 0] = packed_0[0]
++        a_shared[0, wave_row_id, lane_lo, base + 1] = packed_0[1]
++        a_shared[0, wave_row_id, lane_hi, base + 0] = packed_0[2]
++        a_shared[0, wave_row_id, lane_hi, base + 1] = packed_0[3]
+ 
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
++        global_col_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_row * K + global_col_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_1, 0)
++        a_shared[1, wave_row_id, lane_lo, base + 0] = packed_1[0]
++        a_shared[1, wave_row_id, lane_lo, base + 1] = packed_1[1]
++        a_shared[1, wave_row_id, lane_hi, base + 0] = packed_1[2]
++        a_shared[1, wave_row_id, lane_hi, base + 1] = packed_1[3]
++    else:
++        frag = tid - 128
++        wave_col_id = frag >> 6
++        col_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_col = block_col + wave_col_id * 32 + col_in_wave
++        lane_lo = col_in_wave
++        lane_hi = col_in_wave + 32
++        base = chunk * 2
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++        global_k_0 = chunk * 8
++        elem_offset_0 = global_col * K + global_k_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_0, 0)
++        b_shared[0, wave_col_id, lane_lo, base + 0] = packed_0[0]
++        b_shared[0, wave_col_id, lane_lo, base + 1] = packed_0[1]
++        b_shared[0, wave_col_id, lane_hi, base + 0] = packed_0[2]
++        b_shared[0, wave_col_id, lane_hi, base + 1] = packed_0[3]
+ 
++        global_k_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_col * K + global_k_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_1, 0)
++        b_shared[1, wave_col_id, lane_lo, base + 0] = packed_1[0]
++        b_shared[1, wave_col_id, lane_lo, base + 1] = packed_1[1]
++        b_shared[1, wave_col_id, lane_hi, base + 0] = packed_1[2]
++        b_shared[1, wave_col_id, lane_hi, base + 1] = packed_1[3]
++
++    S.syncthreads()
++
++    for pair_idx in S.range(K_TILE_PAIRS):
++        even_words_a = a_shared[0, warp_row, lane]
++        even_words_b = b_shared[0, warp_col, lane]
++        even_frag_a = S.view(even_words_a, S.Tensor((2, 4, 1), S.bf16))
++        even_frag_b = S.view(even_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[0], even_frag_b[0], acc)
++
++        next_even_tile = (pair_idx + 1) * 2
++        if next_even_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[0, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[0, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[0, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[0, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[0, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[0, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[0, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[0, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[1], even_frag_b[1], acc)
++
++        odd_words_a = a_shared[1, warp_row, lane]
++        odd_words_b = b_shared[1, warp_col, lane]
++        odd_frag_a = S.view(odd_words_a, S.Tensor((2, 4, 1), S.bf16))
++        odd_frag_b = S.view(odd_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[0], odd_frag_b[0], acc)
++
++        next_odd_tile = next_even_tile + 1
++        if next_odd_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[1, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[1, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[1, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[1, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[1, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[1, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[1, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[1, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[1], odd_frag_b[1], acc)
+         S.syncthreads()
+ 
+     out_col = block_col + warp_col * 32 + (lane & 31)
+@@ -111,6 +215,5 @@
+         A_flat = A.contiguous().view(-1)
+         B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+         C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
++        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C.view(-1))
+         return C
+
+codex
+The first pipelined version is in place. I’m running the round-local evaluation command now to catch any concrete compile or correctness issue before making targeted fixes.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..245d012fc73172cb7cf0e497db758d3f06fe2f4a
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -12,11 +12,12 @@
+ BLOCK_M = 64
+ BLOCK_N = 64
+ BLOCK_K = 16
++K_TILES = K // BLOCK_K
++K_TILE_PAIRS = K_TILES // 2
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = 256
+ A_RANGE_BYTES = M * K * 2
+ B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+ 
+ 
+ @substrate.jit
+@@ -38,56 +39,159 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+     bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+ 
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
++    a_shared = S.make_shared((2, 2, 64, 4), S.u32)
++    b_shared = S.make_shared((2, 2, 64, 4), S.u32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
++    if tid < 128:
++        frag = tid
++        wave_row_id = frag >> 6
++        row_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_row = block_row + wave_row_id * 32 + row_in_wave
++        lane_lo = row_in_wave
++        lane_hi = row_in_wave + 32
++        base = chunk * 2
+ 
+-        S.syncthreads()
++        global_col_0 = chunk * 8
++        elem_offset_0 = global_row * K + global_col_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_0, 0)
++        a_shared[0, wave_row_id, lane_lo, base + 0] = packed_0[0]
++        a_shared[0, wave_row_id, lane_lo, base + 1] = packed_0[1]
++        a_shared[0, wave_row_id, lane_hi, base + 0] = packed_0[2]
++        a_shared[0, wave_row_id, lane_hi, base + 1] = packed_0[3]
+ 
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
++        global_col_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_row * K + global_col_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_1, 0)
++        a_shared[1, wave_row_id, lane_lo, base + 0] = packed_1[0]
++        a_shared[1, wave_row_id, lane_lo, base + 1] = packed_1[1]
++        a_shared[1, wave_row_id, lane_hi, base + 0] = packed_1[2]
++        a_shared[1, wave_row_id, lane_hi, base + 1] = packed_1[3]
++    else:
++        frag = tid - 128
++        wave_col_id = frag >> 6
++        col_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_col = block_col + wave_col_id * 32 + col_in_wave
++        lane_lo = col_in_wave
++        lane_hi = col_in_wave + 32
++        base = chunk * 2
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++        global_k_0 = chunk * 8
++        elem_offset_0 = global_col * K + global_k_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_0, 0)
++        b_shared[0, wave_col_id, lane_lo, base + 0] = packed_0[0]
++        b_shared[0, wave_col_id, lane_lo, base + 1] = packed_0[1]
++        b_shared[0, wave_col_id, lane_hi, base + 0] = packed_0[2]
++        b_shared[0, wave_col_id, lane_hi, base + 1] = packed_0[3]
+ 
++        global_k_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_col * K + global_k_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_1, 0)
++        b_shared[1, wave_col_id, lane_lo, base + 0] = packed_1[0]
++        b_shared[1, wave_col_id, lane_lo, base + 1] = packed_1[1]
++        b_shared[1, wave_col_id, lane_hi, base + 0] = packed_1[2]
++        b_shared[1, wave_col_id, lane_hi, base + 1] = packed_1[3]
++
++    S.syncthreads()
++
++    for pair_idx in S.range(K_TILE_PAIRS):
++        even_words_a = a_shared[0, warp_row, lane]
++        even_words_b = b_shared[0, warp_col, lane]
++        even_frag_a = S.view(even_words_a, S.Tensor((2, 4, 1), S.bf16))
++        even_frag_b = S.view(even_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[0], even_frag_b[0], acc)
++
++        next_even_tile = (pair_idx + 1) * 2
++        if next_even_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[0, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[0, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[0, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[0, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[0, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[0, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[0, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[0, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[1], even_frag_b[1], acc)
++
++        odd_words_a = a_shared[1, warp_row, lane]
++        odd_words_b = b_shared[1, warp_col, lane]
++        odd_frag_a = S.view(odd_words_a, S.Tensor((2, 4, 1), S.bf16))
++        odd_frag_b = S.view(odd_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[0], odd_frag_b[0], acc)
++
++        next_odd_tile = next_even_tile + 1
++        if next_odd_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[1, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[1, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[1, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[1, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[1, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[1, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[1, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[1, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[1], odd_frag_b[1], acc)
+         S.syncthreads()
+ 
+     out_col = block_col + warp_col * 32 + (lane & 31)
+@@ -111,6 +215,5 @@
+         A_flat = A.contiguous().view(-1)
+         B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+         C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
++        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C.view(-1))
+         return C
+
+codex
+Validation is still running. If it fails, I’ll only inspect the round-local output and fix the specific fault rather than reopening the reference search.
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..245d012fc73172cb7cf0e497db758d3f06fe2f4a
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -12,11 +12,12 @@
+ BLOCK_M = 64
+ BLOCK_N = 64
+ BLOCK_K = 16
++K_TILES = K // BLOCK_K
++K_TILE_PAIRS = K_TILES // 2
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = 256
+ A_RANGE_BYTES = M * K * 2
+ B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+ 
+ 
+ @substrate.jit
+@@ -38,56 +39,159 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+     bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+ 
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
++    a_shared = S.make_shared((2, 2, 64, 4), S.u32)
++    b_shared = S.make_shared((2, 2, 64, 4), S.u32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
++    if tid < 128:
++        frag = tid
++        wave_row_id = frag >> 6
++        row_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_row = block_row + wave_row_id * 32 + row_in_wave
++        lane_lo = row_in_wave
++        lane_hi = row_in_wave + 32
++        base = chunk * 2
+ 
+-        S.syncthreads()
++        global_col_0 = chunk * 8
++        elem_offset_0 = global_row * K + global_col_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_0, 0)
++        a_shared[0, wave_row_id, lane_lo, base + 0] = packed_0[0]
++        a_shared[0, wave_row_id, lane_lo, base + 1] = packed_0[1]
++        a_shared[0, wave_row_id, lane_hi, base + 0] = packed_0[2]
++        a_shared[0, wave_row_id, lane_hi, base + 1] = packed_0[3]
+ 
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
++        global_col_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_row * K + global_col_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_1, 0)
++        a_shared[1, wave_row_id, lane_lo, base + 0] = packed_1[0]
++        a_shared[1, wave_row_id, lane_lo, base + 1] = packed_1[1]
++        a_shared[1, wave_row_id, lane_hi, base + 0] = packed_1[2]
++        a_shared[1, wave_row_id, lane_hi, base + 1] = packed_1[3]
++    else:
++        frag = tid - 128
++        wave_col_id = frag >> 6
++        col_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_col = block_col + wave_col_id * 32 + col_in_wave
++        lane_lo = col_in_wave
++        lane_hi = col_in_wave + 32
++        base = chunk * 2
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++        global_k_0 = chunk * 8
++        elem_offset_0 = global_col * K + global_k_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_0, 0)
++        b_shared[0, wave_col_id, lane_lo, base + 0] = packed_0[0]
++        b_shared[0, wave_col_id, lane_lo, base + 1] = packed_0[1]
++        b_shared[0, wave_col_id, lane_hi, base + 0] = packed_0[2]
++        b_shared[0, wave_col_id, lane_hi, base + 1] = packed_0[3]
+ 
++        global_k_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_col * K + global_k_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_1, 0)
++        b_shared[1, wave_col_id, lane_lo, base + 0] = packed_1[0]
++        b_shared[1, wave_col_id, lane_lo, base + 1] = packed_1[1]
++        b_shared[1, wave_col_id, lane_hi, base + 0] = packed_1[2]
++        b_shared[1, wave_col_id, lane_hi, base + 1] = packed_1[3]
++
++    S.syncthreads()
++
++    for pair_idx in S.range(K_TILE_PAIRS):
++        even_words_a = a_shared[0, warp_row, lane]
++        even_words_b = b_shared[0, warp_col, lane]
++        even_frag_a = S.view(even_words_a, S.Tensor((2, 4, 1), S.bf16))
++        even_frag_b = S.view(even_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[0], even_frag_b[0], acc)
++
++        next_even_tile = (pair_idx + 1) * 2
++        if next_even_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[0, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[0, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[0, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[0, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[0, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[0, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[0, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[0, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[1], even_frag_b[1], acc)
++
++        odd_words_a = a_shared[1, warp_row, lane]
++        odd_words_b = b_shared[1, warp_col, lane]
++        odd_frag_a = S.view(odd_words_a, S.Tensor((2, 4, 1), S.bf16))
++        odd_frag_b = S.view(odd_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[0], odd_frag_b[0], acc)
++
++        next_odd_tile = next_even_tile + 1
++        if next_odd_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[1, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[1, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[1, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[1, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[1, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[1, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[1, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[1, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[1], odd_frag_b[1], acc)
+         S.syncthreads()
+ 
+     out_col = block_col + warp_col * 32 + (lane & 31)
+@@ -111,6 +215,5 @@
+         A_flat = A.contiguous().view(-1)
+         B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+         C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
++        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C.view(-1))
+         return C
+
+ succeeded in 6156ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+exec
+/bin/bash -lc "sed -n '1,240p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782377632.808928, "run_ended_at": 1782377636.841097, "run_wall_time_s": 4.032168, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 7.96, "ref_runtime_us": 0.235, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782377632.809029, "event_type": "eval_start"}, {"timestamp": 1782377632.80909, "event_type": "load_reference_model_start"}, {"timestamp": 1782377632.810107, "event_type": "load_reference_model_end", "duration_s": 0.001012}, {"timestamp": 1782377632.810114, "event_type": "custom_model_import_start"}, {"timestamp": 1782377632.866146, "event_type": "custom_model_import_end", "duration_s": 0.056023}, {"timestamp": 1782377632.866151, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782377632.86643, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000275}, {"timestamp": 1782377632.866432, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782377634.181879, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.315432}, {"timestamp": 1782377634.181886, "event_type": "correctness_check_start"}, {"timestamp": 1782377635.883101, "event_type": "correctness_check_end", "duration_s": 1.701196}, {"timestamp": 1782377636.178757, "event_type": "candidate_profile_start"}, {"timestamp": 1782377636.524201, "event_type": "candidate_profile_end", "duration_s": 0.345414}, {"timestamp": 1782377636.811441, "event_type": "reference_profile_start"}, {"timestamp": 1782377636.840321, "event_type": "reference_profile_end", "duration_s": 0.028859}, {"timestamp": 1782377636.840498, "event_type": "cleanup_start"}, {"timestamp": 1782377636.840983, "event_type": "cleanup_end", "duration_s": 0.000479}, {"timestamp": 1782377636.840987, "event_type": "eval_end", "duration_s": 4.031957}], "load_reference_model_s": 0.001012, "custom_model_import_compile_s": 0.056023, "instantiate_and_to_device_s": 0.000275, "first_candidate_invocation_s": 1.315432, "correctness_check_s": 1.701196, "candidate_profile_wall_time_s": 0.345414, "reference_profile_wall_time_s": 0.028859, "cleanup_s": 0.000479, "eval_total_wall_time_s": 4.031957, "compile_time_s": 1.371455, "profile_time_s": 0.374273}}, "runtime_stats": {"mean": 7.96, "std": 0.0, "min": 7.96, "max": 7.96, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.235, "std": 0.0, "min": 0.235, "max": 0.235, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782377632.809029, "event_type": "eval_start"}, {"timestamp": 1782377632.80909, "event_type": "load_reference_model_start"}, {"timestamp": 1782377632.810107, "event_type": "load_reference_model_end", "duration_s": 0.001012}, {"timestamp": 1782377632.810114, "event_type": "custom_model_import_start"}, {"timestamp": 1782377632.866146, "event_type": "custom_model_import_end", "duration_s": 0.056023}, {"timestamp": 1782377632.866151, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782377632.86643, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000275}, {"timestamp": 1782377632.866432, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782377634.181879, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.315432}, {"timestamp": 1782377634.181886, "event_type": "correctness_check_start"}, {"timestamp": 1782377635.883101, "event_type": "correctness_check_end", "duration_s": 1.701196}, {"timestamp": 1782377636.178757, "event_type": "candidate_profile_start"}, {"timestamp": 1782377636.524201, "event_type": "candidate_profile_end", "duration_s": 0.345414}, {"timestamp": 1782377636.811441, "event_type": "reference_profile_start"}, {"timestamp": 1782377636.840321, "event_type": "reference_profile_end", "duration_s": 0.028859}, {"timestamp": 1782377636.840498, "event_type": "cleanup_start"}, {"timestamp": 1782377636.840983, "event_type": "cleanup_end", "duration_s": 0.000479}, {"timestamp": 1782377636.840987, "event_type": "eval_end", "duration_s": 4.031957}], "load_reference_model_s": 0.001012, "custom_model_import_compile_s": 0.056023, "instantiate_and_to_device_s": 0.000275, "first_candidate_invocation_s": 1.315432, "correctness_check_s": 1.701196, "candidate_profile_wall_time_s": 0.345414, "reference_profile_wall_time_s": 0.028859, "cleanup_s": 0.000479, "eval_total_wall_time_s": 4.031957, "compile_time_s": 1.371455, "profile_time_s": 0.374273}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..245d012fc73172cb7cf0e497db758d3f06fe2f4a
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -12,11 +12,12 @@
+ BLOCK_M = 64
+ BLOCK_N = 64
+ BLOCK_K = 16
++K_TILES = K // BLOCK_K
++K_TILE_PAIRS = K_TILES // 2
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = 256
+ A_RANGE_BYTES = M * K * 2
+ B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+ 
+ 
+ @substrate.jit
+@@ -38,56 +39,159 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+     bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+ 
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
++    a_shared = S.make_shared((2, 2, 64, 4), S.u32)
++    b_shared = S.make_shared((2, 2, 64, 4), S.u32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
++    if tid < 128:
++        frag = tid
++        wave_row_id = frag >> 6
++        row_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_row = block_row + wave_row_id * 32 + row_in_wave
++        lane_lo = row_in_wave
++        lane_hi = row_in_wave + 32
++        base = chunk * 2
+ 
+-        S.syncthreads()
++        global_col_0 = chunk * 8
++        elem_offset_0 = global_row * K + global_col_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_0, 0)
++        a_shared[0, wave_row_id, lane_lo, base + 0] = packed_0[0]
++        a_shared[0, wave_row_id, lane_lo, base + 1] = packed_0[1]
++        a_shared[0, wave_row_id, lane_hi, base + 0] = packed_0[2]
++        a_shared[0, wave_row_id, lane_hi, base + 1] = packed_0[3]
+ 
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
++        global_col_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_row * K + global_col_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_1, 0)
++        a_shared[1, wave_row_id, lane_lo, base + 0] = packed_1[0]
++        a_shared[1, wave_row_id, lane_lo, base + 1] = packed_1[1]
++        a_shared[1, wave_row_id, lane_hi, base + 0] = packed_1[2]
++        a_shared[1, wave_row_id, lane_hi, base + 1] = packed_1[3]
++    else:
++        frag = tid - 128
++        wave_col_id = frag >> 6
++        col_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_col = block_col + wave_col_id * 32 + col_in_wave
++        lane_lo = col_in_wave
++        lane_hi = col_in_wave + 32
++        base = chunk * 2
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++        global_k_0 = chunk * 8
++        elem_offset_0 = global_col * K + global_k_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_0, 0)
++        b_shared[0, wave_col_id, lane_lo, base + 0] = packed_0[0]
++        b_shared[0, wave_col_id, lane_lo, base + 1] = packed_0[1]
++        b_shared[0, wave_col_id, lane_hi, base + 0] = packed_0[2]
++        b_shared[0, wave_col_id, lane_hi, base + 1] = packed_0[3]
+ 
++        global_k_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_col * K + global_k_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_1, 0)
++        b_shared[1, wave_col_id, lane_lo, base + 0] = packed_1[0]
++        b_shared[1, wave_col_id, lane_lo, base + 1] = packed_1[1]
++        b_shared[1, wave_col_id, lane_hi, base + 0] = packed_1[2]
++        b_shared[1, wave_col_id, lane_hi, base + 1] = packed_1[3]
++
++    S.syncthreads()
++
++    for pair_idx in S.range(K_TILE_PAIRS):
++        even_words_a = a_shared[0, warp_row, lane]
++        even_words_b = b_shared[0, warp_col, lane]
++        even_frag_a = S.view(even_words_a, S.Tensor((2, 4, 1), S.bf16))
++        even_frag_b = S.view(even_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[0], even_frag_b[0], acc)
++
++        next_even_tile = (pair_idx + 1) * 2
++        if next_even_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[0, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[0, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[0, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[0, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[0, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[0, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[0, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[0, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[1], even_frag_b[1], acc)
++
++        odd_words_a = a_shared[1, warp_row, lane]
++        odd_words_b = b_shared[1, warp_col, lane]
++        odd_frag_a = S.view(odd_words_a, S.Tensor((2, 4, 1), S.bf16))
++        odd_frag_b = S.view(odd_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[0], odd_frag_b[0], acc)
++
++        next_odd_tile = next_even_tile + 1
++        if next_odd_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[1, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[1, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[1, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[1, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[1, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[1, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[1, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[1, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[1], odd_frag_b[1], acc)
+         S.syncthreads()
+ 
+     out_col = block_col + warp_col * 32 + (lane & 31)
+@@ -111,6 +215,5 @@
+         A_flat = A.contiguous().view(-1)
+         B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+         C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
++        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C.view(-1))
+         return C
+
+codex
+Implemented the software-pipelined MFMA kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py). The kernel now uses double-buffered LDS staging for A/B, unrolls the K loop by 2 tiles, and overlaps global `raw_buffer_load_x4` prefetches with MFMA consumption by reloading the just-consumed buffer while the other buffered tile is executing.
+
+Validation passed with the required round-local command. The debug eval in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `compiled: true`, `correctness: true`, and candidate `runtime_us: 7.96`.
+diff --git a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+index 4c016fecd3c2374c30bc7c6bb6cf296e004e5109..245d012fc73172cb7cf0e497db758d3f06fe2f4a
+--- a/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p02/optimization_rounds_no_invariants/round2/output_model_new.py
+@@ -12,11 +12,12 @@
+ BLOCK_M = 64
+ BLOCK_N = 64
+ BLOCK_K = 16
++K_TILES = K // BLOCK_K
++K_TILE_PAIRS = K_TILES // 2
+ WAVES_PER_BLOCK = 4
+ THREADS_PER_BLOCK = 256
+ A_RANGE_BYTES = M * K * 2
+ B_RANGE_BYTES = K * N * 2
+-C_RANGE_BYTES = M * N * 2
+ 
+ 
+ @substrate.jit
+@@ -38,56 +39,159 @@
+     a_rsrc = S.amdgpu.make_rsrc(A, S.convert(A_RANGE_BYTES, S.i32))
+     bt_rsrc = S.amdgpu.make_rsrc(BT, S.convert(B_RANGE_BYTES, S.i32))
+ 
+-    a_shared = S.make_shared((2, 64, 4), S.u32)
+-    b_shared = S.make_shared((2, 64, 4), S.u32)
++    a_shared = S.make_shared((2, 2, 64, 4), S.u32)
++    b_shared = S.make_shared((2, 2, 64, 4), S.u32)
+     acc = S.full((16,), 0.0, S.f32)
+ 
+-    for k_tile in S.range(K // BLOCK_K):
+-        if tid < 128:
+-            frag = tid
+-            wave_row_id = frag >> 6
+-            row_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_row = block_row + wave_row_id * 32 + row_in_wave
+-            global_col = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_row * K + global_col
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
+-            lane_lo = row_in_wave
+-            lane_hi = row_in_wave + 32
+-            base = chunk * 2
+-            a_shared[wave_row_id, lane_lo, base + 0] = packed[0]
+-            a_shared[wave_row_id, lane_lo, base + 1] = packed[1]
+-            a_shared[wave_row_id, lane_hi, base + 0] = packed[2]
+-            a_shared[wave_row_id, lane_hi, base + 1] = packed[3]
+-        else:
+-            frag = tid - 128
+-            wave_col_id = frag >> 6
+-            col_in_wave = frag & 31
+-            chunk = (frag >> 5) & 1
+-            global_col = block_col + wave_col_id * 32 + col_in_wave
+-            global_k = k_tile * BLOCK_K + chunk * 8
+-            elem_offset = global_col * K + global_k
+-            byte_offset = S.convert(elem_offset * 2, S.i32)
+-            packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
+-            lane_lo = col_in_wave
+-            lane_hi = col_in_wave + 32
+-            base = chunk * 2
+-            b_shared[wave_col_id, lane_lo, base + 0] = packed[0]
+-            b_shared[wave_col_id, lane_lo, base + 1] = packed[1]
+-            b_shared[wave_col_id, lane_hi, base + 0] = packed[2]
+-            b_shared[wave_col_id, lane_hi, base + 1] = packed[3]
++    if tid < 128:
++        frag = tid
++        wave_row_id = frag >> 6
++        row_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_row = block_row + wave_row_id * 32 + row_in_wave
++        lane_lo = row_in_wave
++        lane_hi = row_in_wave + 32
++        base = chunk * 2
+ 
+-        S.syncthreads()
++        global_col_0 = chunk * 8
++        elem_offset_0 = global_row * K + global_col_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_0, 0)
++        a_shared[0, wave_row_id, lane_lo, base + 0] = packed_0[0]
++        a_shared[0, wave_row_id, lane_lo, base + 1] = packed_0[1]
++        a_shared[0, wave_row_id, lane_hi, base + 0] = packed_0[2]
++        a_shared[0, wave_row_id, lane_hi, base + 1] = packed_0[3]
+ 
+-        a_words = a_shared[warp_row, lane]
+-        b_words = b_shared[warp_col, lane]
+-        a_frag = S.view(a_words, S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_words, S.Tensor((2, 4, 1), S.bf16))
++        global_col_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_row * K + global_col_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset_1, 0)
++        a_shared[1, wave_row_id, lane_lo, base + 0] = packed_1[0]
++        a_shared[1, wave_row_id, lane_lo, base + 1] = packed_1[1]
++        a_shared[1, wave_row_id, lane_hi, base + 0] = packed_1[2]
++        a_shared[1, wave_row_id, lane_hi, base + 1] = packed_1[3]
++    else:
++        frag = tid - 128
++        wave_col_id = frag >> 6
++        col_in_wave = frag & 31
++        chunk = (frag >> 5) & 1
++        global_col = block_col + wave_col_id * 32 + col_in_wave
++        lane_lo = col_in_wave
++        lane_hi = col_in_wave + 32
++        base = chunk * 2
+ 
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++        global_k_0 = chunk * 8
++        elem_offset_0 = global_col * K + global_k_0
++        byte_offset_0 = S.convert(elem_offset_0 * 2, S.i32)
++        packed_0 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_0, 0)
++        b_shared[0, wave_col_id, lane_lo, base + 0] = packed_0[0]
++        b_shared[0, wave_col_id, lane_lo, base + 1] = packed_0[1]
++        b_shared[0, wave_col_id, lane_hi, base + 0] = packed_0[2]
++        b_shared[0, wave_col_id, lane_hi, base + 1] = packed_0[3]
+ 
++        global_k_1 = BLOCK_K + chunk * 8
++        elem_offset_1 = global_col * K + global_k_1
++        byte_offset_1 = S.convert(elem_offset_1 * 2, S.i32)
++        packed_1 = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset_1, 0)
++        b_shared[1, wave_col_id, lane_lo, base + 0] = packed_1[0]
++        b_shared[1, wave_col_id, lane_lo, base + 1] = packed_1[1]
++        b_shared[1, wave_col_id, lane_hi, base + 0] = packed_1[2]
++        b_shared[1, wave_col_id, lane_hi, base + 1] = packed_1[3]
++
++    S.syncthreads()
++
++    for pair_idx in S.range(K_TILE_PAIRS):
++        even_words_a = a_shared[0, warp_row, lane]
++        even_words_b = b_shared[0, warp_col, lane]
++        even_frag_a = S.view(even_words_a, S.Tensor((2, 4, 1), S.bf16))
++        even_frag_b = S.view(even_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[0], even_frag_b[0], acc)
++
++        next_even_tile = (pair_idx + 1) * 2
++        if next_even_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[0, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[0, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[0, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[0, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_even_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[0, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[0, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[0, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[0, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(even_frag_a[1], even_frag_b[1], acc)
++
++        odd_words_a = a_shared[1, warp_row, lane]
++        odd_words_b = b_shared[1, warp_col, lane]
++        odd_frag_a = S.view(odd_words_a, S.Tensor((2, 4, 1), S.bf16))
++        odd_frag_b = S.view(odd_words_b, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[0], odd_frag_b[0], acc)
++
++        next_odd_tile = next_even_tile + 1
++        if next_odd_tile < K_TILES:
++            if tid < 128:
++                frag = tid
++                wave_row_id = frag >> 6
++                row_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_row = block_row + wave_row_id * 32 + row_in_wave
++                global_col = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_row * K + global_col
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, byte_offset, 0)
++                lane_lo = row_in_wave
++                lane_hi = row_in_wave + 32
++                base = chunk * 2
++                a_shared[1, wave_row_id, lane_lo, base + 0] = packed[0]
++                a_shared[1, wave_row_id, lane_lo, base + 1] = packed[1]
++                a_shared[1, wave_row_id, lane_hi, base + 0] = packed[2]
++                a_shared[1, wave_row_id, lane_hi, base + 1] = packed[3]
++            else:
++                frag = tid - 128
++                wave_col_id = frag >> 6
++                col_in_wave = frag & 31
++                chunk = (frag >> 5) & 1
++                global_col = block_col + wave_col_id * 32 + col_in_wave
++                global_k = next_odd_tile * BLOCK_K + chunk * 8
++                elem_offset = global_col * K + global_k
++                byte_offset = S.convert(elem_offset * 2, S.i32)
++                packed = S.amdgpu.raw_buffer_load_x4(bt_rsrc, zero, byte_offset, 0)
++                lane_lo = col_in_wave
++                lane_hi = col_in_wave + 32
++                base = chunk * 2
++                b_shared[1, wave_col_id, lane_lo, base + 0] = packed[0]
++                b_shared[1, wave_col_id, lane_lo, base + 1] = packed[1]
++                b_shared[1, wave_col_id, lane_hi, base + 0] = packed[2]
++                b_shared[1, wave_col_id, lane_hi, base + 1] = packed[3]
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(odd_frag_a[1], odd_frag_b[1], acc)
+         S.syncthreads()
+ 
+     out_col = block_col + warp_col * 32 + (lane & 31)
+@@ -111,6 +215,5 @@
+         A_flat = A.contiguous().view(-1)
+         B_t_flat = B.transpose(0, 1).contiguous().view(-1)
+         C = torch.empty((M, N), device=A.device, dtype=torch.bfloat16)
+-        C_flat = C.view(-1)
+-        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C_flat)
++        gemm_kernel[lambda: self._grid](A_flat, B_t_flat, C.view(-1))
+         return C
+
+tokens used
+28,584

@@ -1,0 +1,4341 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efd9a-5bec-7470-9a53-f4c610f944a4
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+  
+MFMA swizzle invariants:
+  For A, `i in [0,32)`, `j in [0,8)`: `A(i, j) -> (lane_id = i + (j / 4) * 32, element = j % 4)`
+  For B, `j in [0,8)`, `i in [0,32)`: `B(j, i) -> (lane_id = j + (i / 4) * 32, element = i % 4)`
+
+Accumulator invariant for C: for each lane in [0, 64) and acc_idx in [0, 16):
+  - col = tile_col_base + (lane % 32)
+  - row = tile_row_base + 8 * (acc_idx // 4) + 4 * (lane // 32) + (acc_idx % 4)
+
+Do not invent a different unpacking. Do not use a naive acc_idx -> contiguous row mapping. Treat this mapping as fixed when writing results.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+I’m reading the starting kernel first, then the nearest local MFMA example under `/workspace/substrate`, and I’ll move directly into `output_model_new.py` once I have the minimum structure needed.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+M = 2048
+K = 4096
+N = 4096
+
+
+@substrate.jit
+def gemm_kernel(
+    A: S.Tensor((2048, 4096), S.bf16),
+    B: S.Tensor((4096, 4096), S.bf16),
+    C: S.Tensor((2048, 4096), S.bf16),
+):
+    for i in S.range(M):
+        for j in S.range(N):
+            acc = S.convert(0.0, S.f32)
+            for kk in S.range(K):
+                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+            C[i, j] = S.convert(acc, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, A, B):
+        if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+            return torch.matmul(A.T, B.T)
+        A2 = A.transpose(-2, -1).contiguous()
+        B2 = B.transpose(-2, -1).contiguous()
+        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
+        return C
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+I have the baseline and the MFMA lane/fragment pattern. I’m checking one or two targeted intrinsic usages next so I can write the first kernel version instead of guessing the buffer-load/LDS syntax.
+exec
+/bin/bash -lc 'rg -n "raw_buffer_load_x4|mfma_32x32x8_bf16_f32|lds|local_array|shared" /workspace/substrate/test /workspace/substrate/python | head -n 200' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/python/substrate/_utils.py:91:    return isinstance(val, type) and issubclass(val, tuple) and hasattr(val, "_fields")
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:53:    a_smem = S.make_shared((2, 2, 2, 16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:54:    b_smem = S.make_shared((2, 2, 2, 8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:55:    c_smem = S.make_shared((2, 2, 2, 2, 16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:164:    # Store results to shared memory
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:30:    a_smem = S.make_shared((16, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:31:    b_smem = S.make_shared((8, 16), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:32:    c_smem = S.make_shared((16, 8), S.f16)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:53:        # Load from shared memory to registers via ldmatrix
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:73:    # Store results back to shared memory: each thread writes its 4 f16 values to c_smem
+/workspace/substrate/python/substrate/runtime/build.py:39:    cc_cmd = [cc, src, "-O3", "-shared", "-fPIC", "-Wno-psabi", "-o", so]
+/workspace/substrate/python/substrate/runtime/specialize.py:36:        make_tuple = lambda vals: type(arg)(*vals) if hasattr(arg, "_fields") else tuple(vals)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:55:    int shared;
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:57:    if (!PyArg_ParseTuple(args, "ss#ii", &name, &data, &data_size, &shared,
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:88:    // set dynamic shared memory if necessary
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:89:    int shared_optin;
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:91:        &shared_optin, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN,
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:93:    if (shared > 49152 && shared_optin > 49152) {
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:96:        int shared_total, shared_static;
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:98:            &shared_total,
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:101:            &shared_static, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, fun));
+/workspace/substrate/python/substrate/backends/nvidia/driver.c:104:            shared_optin - shared_static));
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:24:    shared_buf = S.make_shared((GLOBAL_SIZE,), S.i32)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:26:    shared_buf[tid] = add_global(input_data[tid])
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:28:    output_data[tid] = shared_buf[GLOBAL_SIZE - 1 - tid]
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:35:    shared_buf = S.make_shared((4,), S.f32)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:37:    shared_buf[tid] = GLOBAL_F32_EXACT
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:39:    output_data[tid] = shared_buf[tid]
+/workspace/substrate/python/substrate/backends/amdgpu/driver.c:44:    int shared;
+/workspace/substrate/python/substrate/backends/amdgpu/driver.c:46:    if (!PyArg_ParseTuple(args, "ss#ii", &name, &data, &data_size, &shared,
+/workspace/substrate/python/substrate/backends/amdgpu/driver.py:410:                # For ROCm builds, check if hipcc is available
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:15:    shared_buf = S.make_shared((32,), S.i32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:19:    shared_buf[thread_id] = input_data[thread_id]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:24:    output_data[thread_id] = shared_buf[read_idx]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:32:    shared_buf = S.make_shared((16, 16), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:37:    shared_buf[thread_y, thread_x] = input_matrix[thread_y, thread_x]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:41:    output_matrix[thread_y, thread_x] = shared_buf[thread_x, thread_y]  # Transpose
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:49:    shared_buf = S.make_shared((32,), S.f32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:53:    shared_buf[thread_id] = input_data[thread_id]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:59:            shared_buf[thread_id] = shared_buf[thread_id] + shared_buf[thread_id + stride]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:64:        result[0] = shared_buf[0]
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:69:    shared_words = S.make_shared((16,), S.u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:70:    left_words = S.subview(shared_words, (0,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:71:    right_words = S.subview(shared_words, (8,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:90:    shared_words = S.make_shared((32,), S.u32)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:91:    stats_words = S.subview(shared_words, (0,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:92:    q_words = S.subview(shared_words, (8,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:93:    kv_words = S.subview(shared_words, (16,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:94:    score_words = S.subview(shared_words, (24,), (8,), (1,))
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:124:    def test_basic_shared_memory(self):
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:125:        """Test basic shared memory read/write functionality"""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:141:    def test_2d_shared_memory(self):
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:142:        """Test 2D shared memory with matrix transpose"""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:159:        """Test shared memory reduction operation"""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:173:        """Test that typed views preserve non-zero shared subview offsets."""
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:187:        """Test mixed f32/bf16/u32 typed views on distinct shared subviews."""
+
+exec
+/bin/bash -lc "if [ -f /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py ]; then sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py; fi" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+
+import substrate
+import substrate.language as S
+
+
+M = 2048
+K = 4096
+N = 4096
+
+
+@substrate.jit
+def gemm_kernel(
+    A: S.Tensor((2048, 4096), S.bf16),
+    B: S.Tensor((4096, 4096), S.bf16),
+    C: S.Tensor((2048, 4096), S.bf16),
+):
+    for i in S.range(M):
+        for j in S.range(N):
+            acc = S.convert(0.0, S.f32)
+            for kk in S.range(K):
+                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+            C[i, j] = S.convert(acc, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, A, B):
+        if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+            return torch.matmul(A.T, B.T)
+        A2 = A.transpose(-2, -1).contiguous()
+        B2 = B.transpose(-2, -1).contiguous()
+        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
+        return C
+
+codex
+I found exact `raw_buffer_load_x4` and shared-memory typed-view tests. I’m reading just those targeted files now, then I’ll patch `output_model_new.py` with a first MFMA/LDS implementation.
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+import _substrate_bindings as _C
+from substrate.compiler.code_generator import (
+    _build_import_module,
+    _collect_jit_dependencies,
+    _get_function_def,
+)
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_roundtrip(
+    src: S.Tensor((7,), S.i32),
+    dst: S.Tensor((7,), S.i32),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+    dst_rsrc = S.amdgpu.make_rsrc(dst, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    offset_x2 = S.convert(4, S.i32)
+    offset_x4 = S.convert(12, S.i32)
+
+    value_x1 = S.amdgpu.raw_buffer_load_x1(src_rsrc, zero, zero, 0)
+    value_x2 = S.amdgpu.raw_buffer_load_x2(src_rsrc, zero, offset_x2, 0)
+    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+
+    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_bf16_view(
+    src: S.Tensor((8,), S.bf16),
+    dst: S.Tensor((8,), S.bf16),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+    frag = S.view(packed, S.Tensor((2, 4, 1), S.bf16))
+
+    for i in S.range(2):
+        for j in S.range(4):
+            dst[i * 4 + j] = frag[i, j, 0]
+
+
+def generate_mlir(jit_fn) -> str:
+    jit_deps = _collect_jit_dependencies(jit_fn)
+    import_module = _build_import_module([jit_fn, *jit_deps])
+
+    generator = _C.MLIRGenerator()
+    generator.generate_from_python_ast(import_module)
+
+    for dep in jit_deps:
+        dep_func = _get_function_def(dep.parse())
+        generator.visit_function_def(dep_func, "[]", "jit")
+
+    kernel_func = _get_function_def(jit_fn.parse())
+    generator.visit_function_def(kernel_func, "[]", "kernel")
+    return generator.get_mlir()
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferOps(unittest.TestCase):
+    def test_raw_buffer_roundtrip(self):
+        src = torch.arange(7, dtype=torch.int32, device="cuda") * 17 - 9
+        dst = torch.full((7,), -1, dtype=torch.int32, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_roundtrip[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+    def test_make_rsrc_generates_pointer_and_range(self):
+        mlir = generate_mlir(kernel_amdgpu_raw_buffer_roundtrip)
+
+        self.assertIn(
+            "substrate.memref.extract_aligned_pointer_as_index",
+            mlir,
+        )
+        self.assertGreaterEqual(mlir.count("vector.insert %arg2"), 2, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_load"), 3, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+
+    def test_raw_buffer_bf16_view_extract(self):
+        src = torch.randn((8,), dtype=torch.bfloat16, device="cuda")
+        dst = torch.zeros((8,), dtype=torch.bfloat16, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_bf16_view[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+exec
+/bin/bash -lc "sed -n '60,220p' /workspace/substrate/test/primitives/memory/test_shared_memory.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+        S.syncthreads()
+        stride = stride >> 0x1
+
+    if thread_id == 0:
+        result[0] = shared_buf[0]
+
+
+@substrate.jit
+def kernel_shm_subview_view_offsets(result: S.Tensor((2,), S.u32)):
+    shared_words = S.make_shared((16,), S.u32)
+    left_words = S.subview(shared_words, (0,), (8,), (1,))
+    right_words = S.subview(shared_words, (8,), (8,), (1,))
+    layout = S.make_layout((2, 2), (2, 1))
+    left = S.view(left_words, S.u32, layout)
+    right = S.view(right_words, S.u32, layout)
+
+    tid = S.thread_id(0)
+    if tid == 0:
+        left[0, 0] = S.convert(11, S.u32)
+        right[0, 0] = S.convert(22, S.u32)
+
+    S.syncthreads()
+
+    if tid == 0:
+        result[0] = left[0, 0]
+        result[1] = right[0, 0]
+
+
+@substrate.jit
+def kernel_shm_subview_view_mixed_types(result: S.Tensor((4,), S.i32)):
+    shared_words = S.make_shared((32,), S.u32)
+    stats_words = S.subview(shared_words, (0,), (8,), (1,))
+    q_words = S.subview(shared_words, (8,), (8,), (1,))
+    kv_words = S.subview(shared_words, (16,), (8,), (1,))
+    score_words = S.subview(shared_words, (24,), (8,), (1,))
+    layout_f32 = S.make_layout((2, 4), (4, 1))
+    layout_bf16 = S.make_layout((2, 4), (4, 1))
+    layout_u32 = S.make_layout((2, 2), (2, 1))
+    stats = S.view(stats_words, S.f32, layout_f32)
+    q = S.view(q_words, S.bf16, layout_bf16)
+    kv = S.view(kv_words, S.bf16, layout_bf16)
+    score = S.view(score_words, S.f32, layout_f32)
+    q_u32 = S.view(q_words, S.u32, layout_u32)
+    kv_u32 = S.view(kv_words, S.u32, layout_u32)
+
+    tid = S.thread_id(0)
+    if tid == 0:
+        stats[0, 0] = S.convert(3.0, S.f32)
+        score[0, 0] = S.convert(4.0, S.f32)
+        q[0, 0] = S.convert(1.0, S.bf16)
+        q[0, 1] = S.convert(2.0, S.bf16)
+        kv[0, 0] = S.convert(3.0, S.bf16)
+        kv[0, 1] = S.convert(4.0, S.bf16)
+
+    S.syncthreads()
+
+    if tid == 0:
+        result[0] = S.convert(stats[0, 0], S.i32)
+        result[1] = q_u32[0, 0]
+        result[2] = kv_u32[0, 0]
+        result[3] = S.convert(score[0, 0], S.i32)
+
+
+class TestSharedMemoryOps(unittest.TestCase):
+    def test_basic_shared_memory(self):
+        """Test basic shared memory read/write functionality"""
+        input_data = torch.arange(32, dtype=torch.int32, device="cuda")
+        output_data = torch.zeros(32, dtype=torch.int32, device="cuda")
+
+        expected = torch.cat([input_data[1:], input_data[0:1]])
+
+        kernel_shm_basic[lambda: ((1, 1, 1), (32, 1, 1))](input_data, output_data)
+
+        actual = output_data.cpu()
+        expected = expected.cpu()
+
+        self.assertTrue(
+            torch.equal(actual, expected),
+            f"Expected: {expected.tolist()}, Actual: {actual.tolist()}",
+        )
+
+    def test_2d_shared_memory(self):
+        """Test 2D shared memory with matrix transpose"""
+        input_matrix = torch.arange(256, dtype=torch.float32, device="cuda").reshape(16, 16)
+        output_matrix = torch.zeros((16, 16), dtype=torch.float32, device="cuda")
+
+        expected = input_matrix.t()  # Transpose
+
+        kernel_shm_2d[lambda: ((1, 1, 1), (16, 16, 1))](input_matrix, output_matrix)
+
+        actual = output_matrix.cpu()
+        expected = expected.cpu()
+
+        self.assertTrue(
+            torch.allclose(actual, expected),
+            f"Max difference: {(actual - expected).abs().max()}",
+        )
+
+    def test_shm_reduction(self):
+        """Test shared memory reduction operation"""
+        input_data = torch.ones(32, dtype=torch.float32, device="cuda")
+        result = torch.zeros(2, dtype=torch.float32, device="cuda")
+
+        expected = torch.sum(input_data)
+
+        kernel_shm_reduction[lambda: ((1, 1, 1), (32, 1, 1))](input_data, result)
+
+        actual = result[0].cpu().item()
+        expected = expected.cpu().item()
+
+        self.assertAlmostEqual(actual, expected, places=5, msg=f"Expected: {expected}, Got: {actual}")
+
+    def test_shm_subview_view_offsets(self):
+        """Test that typed views preserve non-zero shared subview offsets."""
+        result = torch.zeros(2, dtype=torch.int32, device="cuda")
+
+        kernel_shm_subview_view_offsets[lambda: ((1, 1, 1), (32, 1, 1))](result)
+
+        actual = result.cpu()
+        expected = torch.tensor([11, 22], dtype=torch.int32)
+
+        self.assertTrue(
+            torch.equal(actual, expected),
+            f"Expected: {expected.tolist()}, Actual: {actual.tolist()}",
+        )
+
+    def test_shm_subview_view_mixed_types(self):
+        """Test mixed f32/bf16/u32 typed views on distinct shared subviews."""
+        result = torch.zeros(4, dtype=torch.int32, device="cuda")
+
+        kernel_shm_subview_view_mixed_types[lambda: ((1, 1, 1), (32, 1, 1))](result)
+
+        actual = result.cpu()
+        expected = torch.tensor([3, 1073758080, 1082146880, 4], dtype=torch.int32)
+
+        self.assertTrue(
+            torch.equal(actual, expected),
+            f"Expected: {expected.tolist()}, Actual: {actual.tolist()}",
+        )
+
+if __name__ == "__main__":
+    unittest.main()
+
+codex
+I’m at the edit point. The remaining ambiguity is the exact B-fragment swizzle, so I’m taking one last local-only look for an AMD GEMM example that stages MFMA operands through shared memory; then I’ll implement and validate.
+exec
+/bin/bash -lc 'rg -n "amdgpu.*make_shared|mfma.*shared|raw_buffer_load_x4.*mfma|make_shared.*mfma" /workspace/substrate/test/examples /workspace/substrate/test/primitives | head -n 80' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+codex
+I’m wiring the first standalone kernel now. I need one small syntax check for block indices before I patch, because the tile mapping depends on it.
+exec
+/bin/bash -lc "rg -n \"block_idx\\(|program_id\\(|thread_id\\(\" /workspace/substrate/test | head -n 80" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_pipeline.py:43:    thread_id = S.thread_id(0)
+/workspace/substrate/test/examples/gemm/nvidia/test_gemm_nvvm_16x8x16.py:28:    lane_id = S.thread_id(0) % WARP_SIZE
+/workspace/substrate/test/primitives/jit/test_num_warps.py:22:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_kernel_early_return.py:12:    row = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_jit_calls.py:24:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_jit_calls.py:35:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_jit_calls.py:82:            tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_tanh_fast_approx.py:40:    idx = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_shuffle.py:14:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_shuffle.py:23:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_shuffle.py:32:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_shuffle.py:41:    tid = S.thread_id(0)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:17:    lane = S.thread_id(0)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:36:    lane = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:25:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/jit/test_global_constexpr.py:36:    tid = S.thread_id(0)
+/workspace/substrate/test/examples/gemv/test_axpy.py:17:    idx = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+/workspace/substrate/test/primitives/memory/test_tensor_assignments.py:39:    thread_id = S.thread_id(0)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:17:    thread_id = S.thread_id(0)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:34:    thread_x = S.thread_id(0)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:35:    thread_y = S.thread_id(1)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:51:    thread_id = S.thread_id(0)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:76:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/memory/test_shared_memory.py:105:    tid = S.thread_id(0)
+/workspace/substrate/test/primitives/layout/test_make_tensor_from_pointer.py:17:    tid = S.thread_id(0)
+
+codex
+I’m replacing the naive path with a standalone 4-wave MFMA kernel now. The first version uses shared-memory staging plus `raw_buffer_load_x4`, with direct BF16 writeback under the required accumulator mapping.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+deleted file mode 100644
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import torch
+-import torch.nn as nn
+-
+-import substrate
+-import substrate.language as S
+-
+-
+-M = 2048
+-K = 4096
+-N = 4096
+-
+-
+-@substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
+-):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
+-
+-
+-class ModelNew(nn.Module):
+-    def __init__(self):
+-        super().__init__()
+-
+-    def forward(self, A, B):
+-        if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
+-        A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
+-        return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+deleted file mode 100644
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..0000000000000000000000000000000000000000
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import torch
+-import torch.nn as nn
+-
+-import substrate
+-import substrate.language as S
+-
+-
+-M = 2048
+-K = 4096
+-N = 4096
+-
+-
+-@substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
+-):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
+-
+-
+-class ModelNew(nn.Module):
+-    def __init__(self):
+-        super().__init__()
+-
+-    def forward(self, A, B):
+-        if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
+-        A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
+-        return C
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..cff0503b6a53eebbc44d2841ac10ba1318cdb84a
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,114 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
+ 
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
+ 
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_frag_u32 = S.view(a_frag, S.Tensor((2, 2), S.u32))
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_frag_u32[0, 0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_frag_u32[0, 1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_frag_u32[1, 0]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_frag_u32[1, 1]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k = k0 + (b_chunk % 16)
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_frag_u32 = S.view(b_frag, S.Tensor((2, 2), S.u32))
++            b_lane_base = (b_chunk % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_chunk // 8) * 2
++
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_frag_u32[0, 0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_frag_u32[0, 1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_frag_u32[1, 0]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_frag_u32[1, 1]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..cff0503b6a53eebbc44d2841ac10ba1318cdb84a
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,114 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
+ 
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
+ 
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_frag_u32 = S.view(a_frag, S.Tensor((2, 2), S.u32))
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_frag_u32[0, 0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_frag_u32[0, 1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_frag_u32[1, 0]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_frag_u32[1, 1]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k = k0 + (b_chunk % 16)
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_frag_u32 = S.view(b_frag, S.Tensor((2, 2), S.u32))
++            b_lane_base = (b_chunk % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_chunk // 8) * 2
++
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_frag_u32[0, 0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_frag_u32[0, 1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_frag_u32[1, 0]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_frag_u32[1, 1]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+The first kernel version is in place. I’m running the round-local evaluation command exactly as provided so I can fix only concrete compile/runtime failures.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..cff0503b6a53eebbc44d2841ac10ba1318cdb84a
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,114 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
+ 
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
+ 
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_frag_u32 = S.view(a_frag, S.Tensor((2, 2), S.u32))
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_frag_u32[0, 0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_frag_u32[0, 1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_frag_u32[1, 0]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_frag_u32[1, 1]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k = k0 + (b_chunk % 16)
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_frag_u32 = S.view(b_frag, S.Tensor((2, 2), S.u32))
++            b_lane_base = (b_chunk % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_chunk // 8) * 2
++
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_frag_u32[0, 0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_frag_u32[0, 1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_frag_u32[1, 0]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_frag_u32[1, 1]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+The harness is still running. I’m polling for the actual compiler/runtime error now rather than making blind changes.
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..cff0503b6a53eebbc44d2841ac10ba1318cdb84a
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,114 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
+ 
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
+ 
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_frag_u32 = S.view(a_frag, S.Tensor((2, 2), S.u32))
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_frag_u32[0, 0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_frag_u32[0, 1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_frag_u32[1, 0]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_frag_u32[1, 1]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k = k0 + (b_chunk % 16)
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_frag_u32 = S.view(b_frag, S.Tensor((2, 2), S.u32))
++            b_lane_base = (b_chunk % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_chunk // 8) * 2
++
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_frag_u32[0, 0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_frag_u32[0, 1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_frag_u32[1, 0]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_frag_u32[1, 1]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ exited 1 in 5191ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+
+exec
+/bin/bash -lc "sed -n '1,240p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782371406.624335, "run_ended_at": 1782371409.773736, "run_wall_time_s": 3.1494, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": false, "runtime_us": null, "ref_runtime_us": 0.245, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "max_difference": ["1104.000000"], "avg_difference": ["75.000000"], "correctness_issue": "Output mismatch", "correctness_trials": "(0 / 1)", "timings_s": {"events": [{"timestamp": 1782371406.624436, "event_type": "eval_start"}, {"timestamp": 1782371406.624495, "event_type": "load_reference_model_start"}, {"timestamp": 1782371406.625469, "event_type": "load_reference_model_end", "duration_s": 0.000968}, {"timestamp": 1782371406.625475, "event_type": "custom_model_import_start"}, {"timestamp": 1782371406.677432, "event_type": "custom_model_import_end", "duration_s": 0.051946}, {"timestamp": 1782371406.677437, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371406.677717, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000276}, {"timestamp": 1782371406.677719, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371407.946851, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.269117}, {"timestamp": 1782371407.946862, "event_type": "correctness_check_start"}, {"timestamp": 1782371409.429084, "event_type": "correctness_check_end", "duration_s": 1.482206}, {"timestamp": 1782371409.71962, "event_type": "reference_profile_start"}, {"timestamp": 1782371409.772563, "event_type": "reference_profile_end", "duration_s": 0.05292}, {"timestamp": 1782371409.773148, "event_type": "cleanup_start"}, {"timestamp": 1782371409.773611, "event_type": "cleanup_end", "duration_s": 0.000456}, {"timestamp": 1782371409.773614, "event_type": "eval_end", "duration_s": 3.149178}], "load_reference_model_s": 0.000968, "custom_model_import_compile_s": 0.051946, "instantiate_and_to_device_s": 0.000276, "first_candidate_invocation_s": 1.269117, "correctness_check_s": 1.482206, "reference_profile_wall_time_s": 0.05292, "cleanup_s": 0.000456, "eval_total_wall_time_s": 3.149178, "compile_time_s": 1.321063, "profile_time_s": 0.05292}}, "runtime_stats": {}, "ref_runtime_stats": {"mean": 0.245, "std": 0.0, "min": 0.245, "max": 0.245, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782371406.624436, "event_type": "eval_start"}, {"timestamp": 1782371406.624495, "event_type": "load_reference_model_start"}, {"timestamp": 1782371406.625469, "event_type": "load_reference_model_end", "duration_s": 0.000968}, {"timestamp": 1782371406.625475, "event_type": "custom_model_import_start"}, {"timestamp": 1782371406.677432, "event_type": "custom_model_import_end", "duration_s": 0.051946}, {"timestamp": 1782371406.677437, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371406.677717, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000276}, {"timestamp": 1782371406.677719, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371407.946851, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.269117}, {"timestamp": 1782371407.946862, "event_type": "correctness_check_start"}, {"timestamp": 1782371409.429084, "event_type": "correctness_check_end", "duration_s": 1.482206}, {"timestamp": 1782371409.71962, "event_type": "reference_profile_start"}, {"timestamp": 1782371409.772563, "event_type": "reference_profile_end", "duration_s": 0.05292}, {"timestamp": 1782371409.773148, "event_type": "cleanup_start"}, {"timestamp": 1782371409.773611, "event_type": "cleanup_end", "duration_s": 0.000456}, {"timestamp": 1782371409.773614, "event_type": "eval_end", "duration_s": 3.149178}], "load_reference_model_s": 0.000968, "custom_model_import_compile_s": 0.051946, "instantiate_and_to_device_s": 0.000276, "first_candidate_invocation_s": 1.269117, "correctness_check_s": 1.482206, "reference_profile_wall_time_s": 0.05292, "cleanup_s": 0.000456, "eval_total_wall_time_s": 3.149178, "compile_time_s": 1.321063, "profile_time_s": 0.05292}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..cff0503b6a53eebbc44d2841ac10ba1318cdb84a
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,114 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
+ 
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
+ 
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_frag_u32 = S.view(a_frag, S.Tensor((2, 2), S.u32))
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_frag_u32[0, 0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_frag_u32[0, 1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_frag_u32[1, 0]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_frag_u32[1, 1]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k = k0 + (b_chunk % 16)
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_frag_u32 = S.view(b_frag, S.Tensor((2, 2), S.u32))
++            b_lane_base = (b_chunk % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_chunk // 8) * 2
++
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_frag_u32[0, 0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_frag_u32[0, 1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_frag_u32[1, 0]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_frag_u32[1, 1]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+I found a concrete packing bug in the B LDS staging: the second-half word offset was being computed from the whole chunk index instead of the local K-half. I’m fixing that and simplifying the u32 packing path before rerunning the harness.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+I fixed the B-half packing bug and removed an unnecessary reinterpretation path that could scramble the shared words. I’m rerunning the exact round command now.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ exited 1 in 5714ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+
+exec
+/bin/bash -lc 'tail -n 1 /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782371464.923907, "run_ended_at": 1782371468.323761, "run_wall_time_s": 3.399853, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": false, "runtime_us": null, "ref_runtime_us": 0.246, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "max_difference": ["120.000000"], "avg_difference": ["16.750000"], "correctness_issue": "Output mismatch", "correctness_trials": "(0 / 1)", "timings_s": {"events": [{"timestamp": 1782371464.924015, "event_type": "eval_start"}, {"timestamp": 1782371464.924083, "event_type": "load_reference_model_start"}, {"timestamp": 1782371464.925108, "event_type": "load_reference_model_end", "duration_s": 0.001019}, {"timestamp": 1782371464.925115, "event_type": "custom_model_import_start"}, {"timestamp": 1782371464.980191, "event_type": "custom_model_import_end", "duration_s": 0.055064}, {"timestamp": 1782371464.980197, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371464.980524, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000324}, {"timestamp": 1782371464.980527, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371466.288947, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.308406}, {"timestamp": 1782371466.288954, "event_type": "correctness_check_start"}, {"timestamp": 1782371467.975059, "event_type": "correctness_check_end", "duration_s": 1.68608}, {"timestamp": 1782371468.26987, "event_type": "reference_profile_start"}, {"timestamp": 1782371468.322405, "event_type": "reference_profile_end", "duration_s": 0.052513}, {"timestamp": 1782371468.323038, "event_type": "cleanup_start"}, {"timestamp": 1782371468.323557, "event_type": "cleanup_end", "duration_s": 0.000512}, {"timestamp": 1782371468.323561, "event_type": "eval_end", "duration_s": 3.399546}], "load_reference_model_s": 0.001019, "custom_model_import_compile_s": 0.055064, "instantiate_and_to_device_s": 0.000324, "first_candidate_invocation_s": 1.308406, "correctness_check_s": 1.68608, "reference_profile_wall_time_s": 0.052513, "cleanup_s": 0.000512, "eval_total_wall_time_s": 3.399546, "compile_time_s": 1.36347, "profile_time_s": 0.052513}}, "runtime_stats": {}, "ref_runtime_stats": {"mean": 0.246, "std": 0.0, "min": 0.246, "max": 0.246, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782371464.924015, "event_type": "eval_start"}, {"timestamp": 1782371464.924083, "event_type": "load_reference_model_start"}, {"timestamp": 1782371464.925108, "event_type": "load_reference_model_end", "duration_s": 0.001019}, {"timestamp": 1782371464.925115, "event_type": "custom_model_import_start"}, {"timestamp": 1782371464.980191, "event_type": "custom_model_import_end", "duration_s": 0.055064}, {"timestamp": 1782371464.980197, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371464.980524, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000324}, {"timestamp": 1782371464.980527, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371466.288947, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.308406}, {"timestamp": 1782371466.288954, "event_type": "correctness_check_start"}, {"timestamp": 1782371467.975059, "event_type": "correctness_check_end", "duration_s": 1.68608}, {"timestamp": 1782371468.26987, "event_type": "reference_profile_start"}, {"timestamp": 1782371468.322405, "event_type": "reference_profile_end", "duration_s": 0.052513}, {"timestamp": 1782371468.323038, "event_type": "cleanup_start"}, {"timestamp": 1782371468.323557, "event_type": "cleanup_end", "duration_s": 0.000512}, {"timestamp": 1782371468.323561, "event_type": "eval_end", "duration_s": 3.399546}], "load_reference_model_s": 0.001019, "custom_model_import_compile_s": 0.055064, "instantiate_and_to_device_s": 0.000324, "first_candidate_invocation_s": 1.308406, "correctness_check_s": 1.68608, "reference_profile_wall_time_s": 0.052513, "cleanup_s": 0.000512, "eval_total_wall_time_s": 3.399546, "compile_time_s": 1.36347, "profile_time_s": 0.052513}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+The kernel is numerically close enough now that this looks like a remaining layout issue, not a broken math path. I’m running one focused local debug script to inspect a few output positions against `A.T @ B.T` so I can correct the remaining swizzle/writeback mismatch.
+exec
+/bin/bash -lc "python - <<'PY'
+import torch, importlib.util
+path='/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py'
+spec=importlib.util.spec_from_file_location('m', path)
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+model=m.ModelNew().cuda()
+torch.manual_seed(0)
+A=torch.randn((8192,2048),device='cuda',dtype=torch.bfloat16)
+B=torch.randn((4096,8192),device='cuda',dtype=torch.bfloat16)
+with torch.no_grad():
+    out=model(A,B)
+    ref=A.T @ B.T
+    diff=(out.float()-ref.float())
+    print('max', diff.abs().max().item(), 'mean', diff.abs().mean().item())
+    for r in [0,1,2,3,4,7,8,15,16,31,32,33,63]:
+        vals=diff[r,:16].cpu().tolist()
+        print('row',r,vals)
+PY" in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ succeeded in 4196ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+max 680.0 mean 100.40583038330078
+row 0 [-196.375, -19.71875, -44.5, -125.75, 27.0, -70.5, -36.3125, 65.21875, 171.0, -28.25, 17.625, -52.0, -278.0, 218.75, 170.984375, -19.921875]
+row 1 [8.0, 180.5, -34.8125, 137.5, -81.0, 61.5, 20.0625, 130.75, 128.0625, -103.0, 370.0, -10.5, 99.701171875, -184.6875, 74.625, -34.1875]
+row 2 [-12.0, -7.0, 1.5, 161.5, 70.25, 71.5, 50.5, -132.5, -110.25, -156.0, -29.6875, -53.25, 11.5, 29.0, -166.375, 237.625]
+row 3 [-120.90625, -58.5, -46.9375, -30.25, -31.0, -129.75, -411.5, 56.0, 37.375, -135.0, 63.875, -144.25, -53.0, 9.75, 116.125, 88.25]
+row 4 [192.0, -142.984375, -118.0, 118.0, -124.09375, -363.0, 88.546875, -93.5, 37.75, -1.5, 78.0, 3.75, -93.625, -10.8046875, 238.5, -45.0]
+row 7 [-84.4375, -157.0, -7.5625, -48.0, -69.1171875, 170.25, -58.625, -26.0, 86.0, 25.875, 54.125, 73.09375, -105.5, 41.875, -41.25, 105.0234375]
+row 8 [135.34375, -244.0, -76.5, -21.5, 41.75, -20.15625, -31.0, -174.625, -341.0, 150.625, 52.9375, 143.25, 156.5, -102.25, -24.625, 82.0]
+row 15 [88.0, -157.25, -115.0, -146.25, 332.5, 103.75, -130.375, -78.0, -62.7421875, 352.0, -155.0, -221.25, 8.375, -83.75, 89.5, 121.25]
+row 16 [4.5, 274.0, 205.0, 144.75, 7.0, 181.625, -150.625, -91.0, 113.0, -182.5, -145.84375, 97.0, -44.25, 270.5, 6.0, 47.8125]
+row 31 [66.5, 80.0, 1.0, 43.75, 2.5, -2.625, 184.0, -189.25, -477.0, -246.25, 25.5, 180.5, -174.0, 14.5, -267.0, 92.5]
+row 32 [-23.0, -59.375, 33.75, -89.875, -12.75, 79.75, -122.0, -40.0, 46.3125, -154.125, 130.25, -224.0, 138.5, -10.5, -242.0, 1.75]
+row 33 [47.625, -74.75, -174.25, -79.6875, 101.125, 166.25, 116.5, -28.234375, 135.5, 193.75, 82.0, -3.0, 31.25, 27.5, -84.375, 56.75]
+row 63 [15.75, -7.0, -39.375, 198.25, 45.5, 125.5, 154.75, -86.125, 80.625, 32.0, -122.5, 147.5, -80.0, -54.25, -168.5, -84.375]
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+exec
+/bin/bash -lc "python - <<'PY'
+import torch, importlib.util
+path='/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py'
+spec=importlib.util.spec_from_file_location('m', path)
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+model=m.ModelNew().cuda()
+A=torch.zeros((8192,2048),device='cuda',dtype=torch.bfloat16)
+B=torch.zeros((4096,8192),device='cuda',dtype=torch.bfloat16)
+# target output row r, col c from k
+r,c,k=5,9,0
+A[k,r]=1
+B[c,k]=1
+with torch.no_grad():
+    out=model(A,B).float().cpu()
+idx=(out"'!=0).nonzero()
+print('"'nnz', idx.shape[0])
+print(idx[:20])
+if idx.shape[0]:
+    for t in idx[:20]:
+        rr,cc=t.tolist(); print(rr,cc,out[rr,cc].item())
+PY" in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ succeeded in 3047ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+nnz 0
+tensor([], size=(0, 2), dtype=torch.int64)
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+exec
+/bin/bash -lc "python - <<'PY'
+import torch, importlib.util
+path='/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py'
+spec=importlib.util.spec_from_file_location('m', path)
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+model=m.ModelNew().cuda()
+A=torch.zeros((8192,2048),device='cuda',dtype=torch.bfloat16)
+B=torch.zeros((4096,8192),device='cuda',dtype=torch.bfloat16)
+r,k=5,0
+A[k,r]=1
+B[:32,k]=1
+with torch.no_grad():
+    out=model(A,B).float().cpu()
+print(out[r,:40])
+print('sum', out.abs().sum().item())
+PY" in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ succeeded in 3049ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+tensor([1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.,
+        0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0.])
+sum 4.0
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+The one-hot probe exposed the remaining issue: the B operand staging is collapsing each contiguous 8-column chunk down to one output every 8 columns. I’m using that signal to correct the B lane/element placement rather than changing the math path.
+exec
+/bin/bash -lc "python - <<'PY'
+import torch, importlib.util
+path='/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py'
+spec=importlib.util.spec_from_file_location('m', path)
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+model=m.ModelNew().cuda()
+for cols in [(0,8),(8,16),(0,4),(4,8)]:
+    A=torch.zeros((8192,2048),device='cuda',dtype=torch.bfloat16)
+    B=torch.zeros((4096,8192),device='cuda',dtype=torch.bfloat16)
+    r,k=5,0
+    A[k,r]=1
+    B[cols[0]:cols[1],k]=1
+    with torch.no_grad():
+        out=model(A,B).float().cpu()
+    nz=(out[r,:32]"'!=0).nonzero().flatten().tolist()
+    vals=[out[r,i].item() for i in nz]
+    print(cols, nz, vals)
+PY' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ succeeded in 3044ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+(0, 8) [0, 8] [1.0, 1.0]
+(8, 16) [16, 24] [1.0, 1.0]
+(0, 4) [0] [1.0]
+(4, 8) [8] [1.0]
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..3aba0f398eda8c9d960a191c6f38d3911e189975
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((K, N), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_k_local = b_chunk % 16
++            b_k = k0 + b_k_local
++            b_col8 = b_chunk // 16
++            b_col = block_col + b_group * 32 + b_col8 * 8
++            b_offset = S.convert((b_k * N + b_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane_base = (b_k_local % 8) + (b_col8 * 2) * 8
++            b_dst_word = (b_k_local // 8) * 2
+ 
++            b_words[b_group, b_lane_base + 0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane_base + 0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane_base + 8, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
+ 
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
++
++
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+         B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B2, C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+I have a better explanation now: the B packing needs contiguous K from the original `B` layout, not contiguous columns from `B.T`. I’m switching the kernel to consume `B` in its original `(4096, 8192)` layout and repacking B through the same 32-lane plus high-half pattern as A.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+exec
+/bin/bash -lc "python - <<'PY'
+import torch, importlib.util
+path='/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py'
+spec=importlib.util.spec_from_file_location('m', path)
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+model=m.ModelNew().cuda()
+A=torch.zeros((8192,2048),device='cuda',dtype=torch.bfloat16)
+B=torch.zeros((4096,8192),device='cuda',dtype=torch.bfloat16)
+r,k=5,0
+A[k,r]=1
+B[:32,k]=1
+with torch.no_grad():
+    out=model(A,B).float().cpu()
+print(out[r,:40])
+print('sum', out.abs().sum().item())
+PY" in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ succeeded in 3056ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+tensor([1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.,
+        1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0.,
+        0., 0., 0., 0.])
+sum 32.0
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+The B staging fix matches the one-hot probe now. I’m running the exact round-local harness command again to confirm full correctness and get the measured result.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+ succeeded in 6077ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+exec
+/bin/bash -lc 'tail -n 1 /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782371679.068169, "run_ended_at": 1782371683.041912, "run_wall_time_s": 3.973741, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 7.88, "ref_runtime_us": 0.24, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782371679.068261, "event_type": "eval_start"}, {"timestamp": 1782371679.068318, "event_type": "load_reference_model_start"}, {"timestamp": 1782371679.069288, "event_type": "load_reference_model_end", "duration_s": 0.000965}, {"timestamp": 1782371679.069295, "event_type": "custom_model_import_start"}, {"timestamp": 1782371679.122053, "event_type": "custom_model_import_end", "duration_s": 0.052748}, {"timestamp": 1782371679.122059, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371679.122351, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000288}, {"timestamp": 1782371679.122353, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371680.556458, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.434089}, {"timestamp": 1782371680.556467, "event_type": "correctness_check_start"}, {"timestamp": 1782371682.075485, "event_type": "correctness_check_end", "duration_s": 1.519001}, {"timestamp": 1782371682.360226, "event_type": "candidate_profile_start"}, {"timestamp": 1782371682.717648, "event_type": "candidate_profile_end", "duration_s": 0.357391}, {"timestamp": 1782371683.010813, "event_type": "reference_profile_start"}, {"timestamp": 1782371683.041134, "event_type": "reference_profile_end", "duration_s": 0.030298}, {"timestamp": 1782371683.041317, "event_type": "cleanup_start"}, {"timestamp": 1782371683.041797, "event_type": "cleanup_end", "duration_s": 0.000474}, {"timestamp": 1782371683.0418, "event_type": "eval_end", "duration_s": 3.973538}], "load_reference_model_s": 0.000965, "custom_model_import_compile_s": 0.052748, "instantiate_and_to_device_s": 0.000288, "first_candidate_invocation_s": 1.434089, "correctness_check_s": 1.519001, "candidate_profile_wall_time_s": 0.357391, "reference_profile_wall_time_s": 0.030298, "cleanup_s": 0.000474, "eval_total_wall_time_s": 3.973538, "compile_time_s": 1.486837, "profile_time_s": 0.387689}}, "runtime_stats": {"mean": 7.88, "std": 0.0, "min": 7.88, "max": 7.88, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.24, "std": 0.0, "min": 0.24, "max": 0.24, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782371679.068261, "event_type": "eval_start"}, {"timestamp": 1782371679.068318, "event_type": "load_reference_model_start"}, {"timestamp": 1782371679.069288, "event_type": "load_reference_model_end", "duration_s": 0.000965}, {"timestamp": 1782371679.069295, "event_type": "custom_model_import_start"}, {"timestamp": 1782371679.122053, "event_type": "custom_model_import_end", "duration_s": 0.052748}, {"timestamp": 1782371679.122059, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782371679.122351, "event_type": "instantiate_and_to_device_end", "duration_s": 0.000288}, {"timestamp": 1782371679.122353, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782371680.556458, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.434089}, {"timestamp": 1782371680.556467, "event_type": "correctness_check_start"}, {"timestamp": 1782371682.075485, "event_type": "correctness_check_end", "duration_s": 1.519001}, {"timestamp": 1782371682.360226, "event_type": "candidate_profile_start"}, {"timestamp": 1782371682.717648, "event_type": "candidate_profile_end", "duration_s": 0.357391}, {"timestamp": 1782371683.010813, "event_type": "reference_profile_start"}, {"timestamp": 1782371683.041134, "event_type": "reference_profile_end", "duration_s": 0.030298}, {"timestamp": 1782371683.041317, "event_type": "cleanup_start"}, {"timestamp": 1782371683.041797, "event_type": "cleanup_end", "duration_s": 0.000474}, {"timestamp": 1782371683.0418, "event_type": "eval_end", "duration_s": 3.973538}], "load_reference_model_s": 0.000965, "custom_model_import_compile_s": 0.052748, "instantiate_and_to_device_s": 0.000288, "first_candidate_invocation_s": 1.434089, "correctness_check_s": 1.519001, "candidate_profile_wall_time_s": 0.357391, "reference_profile_wall_time_s": 0.030298, "cleanup_s": 0.000474, "eval_total_wall_time_s": 3.973538, "compile_time_s": 1.486837, "profile_time_s": 0.387689}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+codex
+Implemented the optimized standalone kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py). It now uses `S.amdgpu.mfma_32x32x8_bf16_f32`, stages operands through LDS, loads from global with `S.amdgpu.raw_buffer_load_x4`, and scales the MFMA path across a 2x2 wave grid with the required accumulator writeback mapping.
+
+Validation passed with the exact round command. The latest debug record in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/debug_eval.jsonl) shows `correctness: true` and candidate `runtime_us: 7.88`.
+diff --git a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+index 1aa3c1d09b70070f844a6c4358da59fa1b605987..294e627bda809384e1534c3fc8bcd4020699cb96
+--- a/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb1/p18/optimization_rounds/round1/output_model_new.py
+@@ -6,33 +6,111 @@
+ 
+ 
+ M = 2048
+-K = 4096
++K = 8192
+ N = 4096
++BLOCK_M = 64
++BLOCK_N = 64
++BLOCK_K = 16
++THREADS = 256
+ 
+ 
+ @substrate.jit
+-def gemm_kernel(
+-    A: S.Tensor((2048, 4096), S.bf16),
+-    B: S.Tensor((4096, 4096), S.bf16),
+-    C: S.Tensor((2048, 4096), S.bf16),
++def gemm_kernel_mfma(
++    A: S.Tensor((M, K), S.bf16),
++    B: S.Tensor((N, K), S.bf16),
++    C: S.Tensor((M, N), S.bf16),
++    a_range_bytes: S.i32,
++    b_range_bytes: S.i32,
+ ):
+-    for i in S.range(M):
+-        for j in S.range(N):
+-            acc = S.convert(0.0, S.f32)
+-            for kk in S.range(K):
+-                acc += S.convert(A[i, kk], S.f32) * S.convert(B[kk, j], S.f32)
+-            C[i, j] = S.convert(acc, S.bf16)
++    tid = S.thread_id(0)
++    lane = tid % 64
++    warp = tid // 64
++    warp_row = warp // 2
++    warp_col = warp % 2
++
++    block_col = S.block_id(0) * BLOCK_N
++    block_row = S.block_id(1) * BLOCK_M
++
++    a_rsrc = S.amdgpu.make_rsrc(A, a_range_bytes)
++    b_rsrc = S.amdgpu.make_rsrc(B, b_range_bytes)
++    zero = S.convert(0, S.i32)
++
++    a_words = S.make_shared((2, 64, 4), S.u32)
++    b_words = S.make_shared((2, 64, 4), S.u32)
++
++    acc = S.full((16,), 0.0, S.f32)
++
++    for k0 in S.range(0, K, BLOCK_K):
++        if tid < 128:
++            a_group = tid // 64
++            a_chunk = tid % 64
++            a_row = block_row + a_group * 32 + (a_chunk % 32)
++            a_k_chunk = a_chunk // 32
++            a_col = k0 + a_k_chunk * 8
++            a_offset = S.convert((a_row * K + a_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero, a_offset, 0)
++            a_lane0 = a_chunk % 32
++            a_lane1 = a_lane0 + 32
++            a_dst_word = a_k_chunk * 2
++
++            a_words[a_group, a_lane0, a_dst_word + 0] = a_pack[0]
++            a_words[a_group, a_lane0, a_dst_word + 1] = a_pack[1]
++            a_words[a_group, a_lane1, a_dst_word + 0] = a_pack[2]
++            a_words[a_group, a_lane1, a_dst_word + 1] = a_pack[3]
++
++            b_group = tid // 64
++            b_chunk = tid % 64
++            b_col_local = b_chunk % 32
++            b_k_chunk = b_chunk // 32
++            b_col = block_col + b_group * 32 + b_col_local
++            b_k = k0 + b_k_chunk * 8
++            b_offset = S.convert((b_col * K + b_k) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero, b_offset, 0)
++            b_lane0 = b_col_local
++            b_lane1 = b_col_local + 32
++            b_dst_word = b_k_chunk * 2
++
++            b_words[b_group, b_lane0, b_dst_word + 0] = b_pack[0]
++            b_words[b_group, b_lane0, b_dst_word + 1] = b_pack[1]
++            b_words[b_group, b_lane1, b_dst_word + 0] = b_pack[2]
++            b_words[b_group, b_lane1, b_dst_word + 1] = b_pack[3]
++
++        S.syncthreads()
++
++        a_lane_words = a_words[warp_row, lane]
++        b_lane_words = b_words[warp_col, lane]
++        a_mfma = S.view(a_lane_words, S.Tensor((2, 4, 1), S.bf16))
++        b_mfma = S.view(b_lane_words, S.Tensor((2, 4, 1), S.bf16))
++
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[0], b_mfma[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_mfma[1], b_mfma[1], acc)
++
++        S.syncthreads()
++
++    tile_row_base = block_row + warp_row * 32
++    tile_col_base = block_col + warp_col * 32
++    lane_col = lane % 32
++    lane_row_quad = lane // 32
++
++    for acc_idx in S.range(16):
++        out_col = tile_col_base + lane_col
++        out_row = tile_row_base + 8 * (acc_idx // 4) + 4 * lane_row_quad + (acc_idx % 4)
++        C[out_row, out_col] = S.convert(acc[acc_idx], S.bf16)
+ 
+ 
+ class ModelNew(nn.Module):
+     def __init__(self):
+         super().__init__()
++        self._a_range_bytes = M * K * 2
++        self._b_range_bytes = K * N * 2
+ 
+     def forward(self, A, B):
+         if tuple(A.shape) != (8192, 2048) or tuple(B.shape) != (4096, 8192):
+-            return torch.matmul(A.T, B.T)
++            raise RuntimeError("ModelNew only supports A=(8192, 2048), B=(4096, 8192)")
++
+         A2 = A.transpose(-2, -1).contiguous()
+-        B2 = B.transpose(-2, -1).contiguous()
+-        C = torch.empty((2048, 4096), device=A.device, dtype=A.dtype)
+-        gemm_kernel[lambda: ((1, 1, 1), (1, 1, 1))](A2, B2, C)
++        C = torch.empty((M, N), device=A.device, dtype=A.dtype)
++        gemm_kernel_mfma[lambda: ((N // BLOCK_N, M // BLOCK_M, 1), (THREADS, 1, 1))](
++            A2, B.contiguous(), C, self._a_range_bytes, self._b_range_bytes
++        )
+         return C
+
+tokens used
+153,370

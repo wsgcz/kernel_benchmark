@@ -1,0 +1,1700 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efe34-0e68-7411-862a-47cd702ada19
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/candidate_input.py.
+
+## 1: Prompt 1
+
+Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+
+Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
+  
+MFMA swizzle invariants:
+  For A, `i in [0,32)`, `j in [0,8)`: `A(i, j) -> (lane_id = i + (j / 4) * 32, element = j % 4)`
+  For B, `j in [0,8)`, `i in [0,32)`: `B(j, i) -> (lane_id = j + (i / 4) * 32, element = i % 4)`
+
+Accumulator invariant for C: for each lane in [0, 64) and acc_idx in [0, 16):
+  - col = tile_col_base + (lane % 32)
+  - row = tile_row_base + 8 * (acc_idx // 4) + 4 * (lane // 32) + (acc_idx % 4)
+
+Do not invent a different unpacking. Do not use a naive acc_idx -> contiguous row mapping. Treat this mapping as fixed when writing results.
+
+Stage A and B through LDS. Each thread loads operand fragments in 16-byte chunks. Treat each 16-byte fragment as `(4, S.u32)` and reinterpret it as `2 x (4, S.bf16)`. Feed both `(4, S.bf16)` halves into MFMA in natural order. The intended effect is a cooperative `32x32x16` accumulation from two natural MFMA steps. Do not add lane-dependent or K-dependent control flow to select halves.
+  - The two `(4, S.bf16)` halves from one 16-byte LDS load collectively represent a swizzled `32x16` operand contribution with 4-column interleaving.
+  - Consuming them in natural order must produce the same final C as a naive conceptual layout because operand pairings remain consistent under MFMA swizzle.
+
+Scale the kernel from one wave to four waves without changing the MFMA per-wave invariant. Interpret the 4 warps as a 2 x 2 warp grid. Keep MFMA math identical per warp. Only add warp ownership offsets at operand fetch and output writeback.
+
+Note:
+
+- The current snapshot of the repo under /workspace/substrate has examples of the substrate DSL. /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py has an implementation of GEMM / MFMA
+- If optimizing for a fused kernel, do not directly call the amdgpu gemm kernel inside `substrate_kernel`. You can adopt the changes of it but the goal is to write a standalone fused substrate kernel.
+- Make the optimized path cudagraph-safe: never build descriptor / metadata device tensors inside `forward()`. Prebuild or cache them and reuse them; only rebuild if the underlying storage pointer changes.
+- Do not use torch native compute anywhere in `output_model_new.py` to perform multiplication or linear algebra, including fallback branches.
+- This ban includes any direct or indirect torch compute path such as `torch.matmul`, `torch.mm`, `torch.mv`, `torch.bmm`, `torch.einsum`, `torch.mul`, `torch.addmm`, `torch.chain_matmul`, `torch.nn.functional.linear`, or equivalent compositions that let torch perform the multiply/linear work.
+- The optimized kernel must actually issue MFMA instructions in the substrate kernel; a solution that does not use MFMA is not acceptable.
+- Use the precreated `case.txt` in the current round directory. It already contains exactly one line: the absolute path of the current round directory.
+- Do not modify `case.txt`. If you manually run correctness/debug evaluation, use only the exact evaluation command injected by the orchestrator in the final prompt for this round.
+- Do not use git to try to find any old files!!!
+Strict constraints:
+  - Do not browse the web.
+  - Do not search online for documentation, examples, repos, or references.
+  - Do not use any network access at all.
+  - Use only the files already present in the workspace dir.
+  - Do not read any other kernel from anywhere in the space!!!
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel and the nearest local MFMA example first, then I’ll move directly into `output_model_new.py` and validate with the round-local command only.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+SQRT_2 = 1.4142135623730951
+BATCH_SIZE = 2048
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+ROW_BLOCK = 64
+COL_BLOCK = 64
+K_BLOCK = 16
+WAVES_PER_BLOCK = 4
+THREADS_PER_BLOCK = 256
+ROW_BLOCKS = BATCH_SIZE // ROW_BLOCK
+COL_BLOCKS = OUT_FEATURES // COL_BLOCK
+K_BLOCKS = IN_FEATURES // K_BLOCK
+
+
+def _row_mean_launch():
+    return ((ROW_BLOCKS, 1, 1), (THREADS_PER_BLOCK, 1, 1))
+
+
+def _apply_launch():
+    total = BATCH_SIZE * OUT_FEATURES
+    blocks = (total + THREADS_PER_BLOCK - 1) // THREADS_PER_BLOCK
+    return ((blocks, 1, 1), (THREADS_PER_BLOCK, 1, 1))
+
+
+def _pack_a(x: torch.Tensor) -> torch.Tensor:
+    x_blocks = x.view(ROW_BLOCKS, ROW_BLOCK, K_BLOCKS, K_BLOCK)
+    packed_waves = []
+    for wave_row in range(2):
+        sub = x_blocks[:, wave_row * 32 : (wave_row + 1) * 32, :, :]
+        lanes_lo = torch.cat((sub[..., 0:4], sub[..., 8:12]), dim=-1).permute(0, 2, 1, 3)
+        lanes_hi = torch.cat((sub[..., 4:8], sub[..., 12:16]), dim=-1).permute(0, 2, 1, 3)
+        packed_waves.append(torch.cat((lanes_lo, lanes_hi), dim=2))
+    return torch.stack(packed_waves, dim=2).contiguous()
+
+
+def _pack_b(w_t: torch.Tensor) -> torch.Tensor:
+    w_blocks = w_t.view(K_BLOCKS, K_BLOCK, COL_BLOCKS, COL_BLOCK)
+    packed_waves = []
+    for wave_col in range(2):
+        sub = w_blocks[:, :, :, wave_col * 32 : (wave_col + 1) * 32]
+        quads = sub.view(K_BLOCKS, K_BLOCK, COL_BLOCKS, 8, 4)
+        first = quads[:, 0:8, :, :, :]
+        second = quads[:, 8:16, :, :, :]
+        packed = torch.cat((first, second), dim=-1)
+        packed_waves.append(packed.permute(2, 0, 3, 1, 4).reshape(COL_BLOCKS, K_BLOCKS, 64, 8))
+    return torch.stack(packed_waves, dim=2).contiguous()
+
+
+@substrate.jit
+def row_mean_mfma_kernel(
+    A_PACK: S.Tensor((ROW_BLOCKS, K_BLOCKS, 2, 64, 8), S.bf16),
+    B_PACK: S.Tensor((COL_BLOCKS, K_BLOCKS, 2, 64, 8), S.bf16),
+    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
+    SUB: S.Tensor((OUT_FEATURES,), S.bf16),
+    ROW_MEAN: S.Tensor((BATCH_SIZE,), S.f32),
+):
+    tid = S.thread_id(0)
+    lane = tid % 64
+    wave = tid // 64
+    wave_row = wave // 2
+    wave_col = wave % 2
+    row_block = S.block_id(0)
+
+    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+    partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+    row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+
+    zero_i32 = S.convert(0, S.i32)
+    a_rsrc = S.amdgpu.make_rsrc(A_PACK, S.convert(ROW_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+    b_rsrc = S.amdgpu.make_rsrc(B_PACK, S.convert(COL_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+
+    if tid < 128:
+        row_partials[tid // 32, tid % 32] = S.convert(0.0, S.f32)
+    S.syncthreads()
+
+    for col_block in S.range(COL_BLOCKS):
+        acc = S.full((16,), 0.0, S.f32)
+
+        for k_block in S.range(K_BLOCKS):
+            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
+
+            for word in S.range(4):
+                shared_a[tid, word] = a_words[word]
+                shared_b[tid, word] = b_words[word]
+            S.syncthreads()
+
+            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
+            S.syncthreads()
+
+        col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+        col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+        for acc_idx in S.range(16):
+            partial[tid, acc_idx] = acc[acc_idx] + col_bias
+        S.syncthreads()
+
+        if lane < 32:
+            row_in_wave = lane
+            half_select = (row_in_wave % 8) // 4
+            acc_idx = (row_in_wave // 8) * 4 + (row_in_wave % 4)
+            src_base = wave * 64 + half_select * 32
+            row_sum = S.convert(0.0, S.f32)
+            for col_lane in S.range(32):
+                row_sum += partial[src_base + col_lane, acc_idx]
+            row_partials[wave, row_in_wave] = row_partials[wave, row_in_wave] + row_sum
+        S.syncthreads()
+
+    if wave_col == 0 and lane < 32:
+        row = row_block * ROW_BLOCK + wave_row * 32 + lane
+        ROW_MEAN[row] = (row_partials[wave, lane] + row_partials[wave + 1, lane]) / S.convert(OUT_FEATURES, S.f32)
+
+
+@substrate.jit
+def apply_rowwise_kernel(
+    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
+    ROW_MEAN: S.Tensor((BATCH_SIZE,), S.f32),
+    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    idx = S.block_id(0) * S.block_dim(0) + S.thread_id(0)
+    total = BATCH_SIZE * OUT_FEATURES
+    if idx < total:
+        row = idx // OUT_FEATURES
+        col = idx % OUT_FEATURES
+        mean = ROW_MEAN[row]
+        gelu = S.convert(0.5, S.f32) * mean * (S.convert(1.0, S.f32) + S.erf(mean / S.convert(SQRT_2, S.f32)))
+        Y[row, col] = S.convert(S.convert(X[row, col], S.f32) + gelu, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.gemm = nn.Linear(in_features, out_features, bias=bias)
+        self.subtract = nn.Parameter(torch.randn(out_features))
+        self.register_buffer("_weight_packed", torch.empty(0, dtype=torch.bfloat16), persistent=False)
+        self.register_buffer("_bias_cache", torch.empty(0, dtype=torch.bfloat16), persistent=False)
+        self.register_buffer("_sub_cache", torch.empty(0, dtype=torch.bfloat16), persistent=False)
+        self._weight_ptr = None
+        self._bias_ptr = None
+        self._sub_ptr = None
+        self._cache_device = None
+
+    def _refresh_static_cache(self, device: torch.device):
+        weight_ptr = self.gemm.weight.data_ptr()
+        bias_ptr = self.gemm.bias.data_ptr()
+        sub_ptr = self.subtract.data_ptr()
+        if (
+            self._cache_device == device
+            and self._weight_ptr == weight_ptr
+            and self._bias_ptr == bias_ptr
+            and self._sub_ptr == sub_ptr
+            and self._weight_packed.numel() != 0
+        ):
+            return
+        with torch.no_grad():
+            w_t = self.gemm.weight.detach().to(device=device, dtype=torch.bfloat16).t().contiguous()
+            self._weight_packed = _pack_b(w_t)
+            self._bias_cache = self.gemm.bias.detach().to(device=device, dtype=torch.bfloat16).contiguous()
+            self._sub_cache = self.subtract.detach().to(device=device, dtype=torch.bfloat16).contiguous()
+        self._weight_ptr = weight_ptr
+        self._bias_ptr = bias_ptr
+        self._sub_ptr = sub_ptr
+        self._cache_device = device
+
+    def forward(self, x):
+        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or tuple(self.subtract.shape) != (OUT_FEATURES,):
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+        self._refresh_static_cache(x.device)
+        x_contig = x.contiguous()
+        a_packed = _pack_a(x_contig)
+        row_mean = torch.empty((BATCH_SIZE,), device=x.device, dtype=torch.float32)
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=torch.bfloat16)
+        row_mean_mfma_kernel[_row_mean_launch](a_packed, self._weight_packed, self._bias_cache, self._sub_cache, row_mean)
+        apply_rowwise_kernel[_apply_launch](x_contig, row_mean, y)
+        return y
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+I have the starting kernel and MFMA reference. I’m editing `output_model_new.py` now by keeping the existing fused structure and replacing the GEMM loop with a double-buffered, K-unrolled MFMA pipeline.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..9e50d10804358c8d8f3a4e409454916e4cfc77e0
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -75,6 +75,15 @@
+     a_rsrc = S.amdgpu.make_rsrc(A_PACK, S.convert(ROW_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+     b_rsrc = S.amdgpu.make_rsrc(B_PACK, S.convert(COL_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+ 
++    def load_stage(stage, k_block):
++        a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
++        b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
++        a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
++        b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[stage, tid, word] = a_words[word]
++            shared_b[stage, tid, word] = b_words[word]
++
+     if tid < 128:
+         row_partials[tid // 32, tid % 32] = S.convert(0.0, S.f32)
+     S.syncthreads()
+@@ -82,23 +91,39 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        load_stage(0, 0)
++        S.syncthreads()
+ 
+-            for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++        for k_base in S.range(0, K_BLOCKS - 2, 2):
++            load_stage(1, k_base + 1)
++            a_frag_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            load_stage(0, k_base + 2)
++            a_frag_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        load_stage(1, K_BLOCKS - 1)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..9e50d10804358c8d8f3a4e409454916e4cfc77e0
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -75,6 +75,15 @@
+     a_rsrc = S.amdgpu.make_rsrc(A_PACK, S.convert(ROW_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+     b_rsrc = S.amdgpu.make_rsrc(B_PACK, S.convert(COL_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+ 
++    def load_stage(stage, k_block):
++        a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
++        b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
++        a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
++        b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[stage, tid, word] = a_words[word]
++            shared_b[stage, tid, word] = b_words[word]
++
+     if tid < 128:
+         row_partials[tid // 32, tid % 32] = S.convert(0.0, S.f32)
+     S.syncthreads()
+@@ -82,23 +91,39 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        load_stage(0, 0)
++        S.syncthreads()
+ 
+-            for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++        for k_base in S.range(0, K_BLOCKS - 2, 2):
++            load_stage(1, k_base + 1)
++            a_frag_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            load_stage(0, k_base + 2)
++            a_frag_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        load_stage(1, K_BLOCKS - 1)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+codex
+The first pipelined version is in place. I’m running the required round-local evaluation now and will only make targeted fixes if the concrete failure points to one.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..9e50d10804358c8d8f3a4e409454916e4cfc77e0
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -75,6 +75,15 @@
+     a_rsrc = S.amdgpu.make_rsrc(A_PACK, S.convert(ROW_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+     b_rsrc = S.amdgpu.make_rsrc(B_PACK, S.convert(COL_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+ 
++    def load_stage(stage, k_block):
++        a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
++        b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
++        a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
++        b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[stage, tid, word] = a_words[word]
++            shared_b[stage, tid, word] = b_words[word]
++
+     if tid < 128:
+         row_partials[tid // 32, tid % 32] = S.convert(0.0, S.f32)
+     S.syncthreads()
+@@ -82,23 +91,39 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        load_stage(0, 0)
++        S.syncthreads()
+ 
+-            for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++        for k_base in S.range(0, K_BLOCKS - 2, 2):
++            load_stage(1, k_base + 1)
++            a_frag_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            load_stage(0, k_base + 2)
++            a_frag_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        load_stage(1, K_BLOCKS - 1)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..9e50d10804358c8d8f3a4e409454916e4cfc77e0
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -75,6 +75,15 @@
+     a_rsrc = S.amdgpu.make_rsrc(A_PACK, S.convert(ROW_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+     b_rsrc = S.amdgpu.make_rsrc(B_PACK, S.convert(COL_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+ 
++    def load_stage(stage, k_block):
++        a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
++        b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
++        a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
++        b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[stage, tid, word] = a_words[word]
++            shared_b[stage, tid, word] = b_words[word]
++
+     if tid < 128:
+         row_partials[tid // 32, tid % 32] = S.convert(0.0, S.f32)
+     S.syncthreads()
+@@ -82,23 +91,39 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        load_stage(0, 0)
++        S.syncthreads()
+ 
+-            for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++        for k_base in S.range(0, K_BLOCKS - 2, 2):
++            load_stage(1, k_base + 1)
++            a_frag_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            load_stage(0, k_base + 2)
++            a_frag_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        load_stage(1, K_BLOCKS - 1)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+ exited 139 in 3252ms:
+codex
+The evaluation crashed without a Python traceback, so I’m checking the round-local debug output and doing one focused compatibility pass on the kernel structure before rerunning.
+exec
+/bin/bash -lc "sed -n '1,240p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'python -m py_compile /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..9e50d10804358c8d8f3a4e409454916e4cfc77e0
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2, THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -75,6 +75,15 @@
+     a_rsrc = S.amdgpu.make_rsrc(A_PACK, S.convert(ROW_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+     b_rsrc = S.amdgpu.make_rsrc(B_PACK, S.convert(COL_BLOCKS * K_BLOCKS * 2 * 64 * 8 * 2, S.i32))
+ 
++    def load_stage(stage, k_block):
++        a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
++        b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
++        a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
++        b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[stage, tid, word] = a_words[word]
++            shared_b[stage, tid, word] = b_words[word]
++
+     if tid < 128:
+         row_partials[tid // 32, tid % 32] = S.convert(0.0, S.f32)
+     S.syncthreads()
+@@ -82,23 +91,39 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        load_stage(0, 0)
++        S.syncthreads()
+ 
+-            for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++        for k_base in S.range(0, K_BLOCKS - 2, 2):
++            load_stage(1, k_base + 1)
++            a_frag_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            load_stage(0, k_base + 2)
++            a_frag_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[0, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        load_stage(1, K_BLOCKS - 1)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[1, tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+codex
+I’m removing the higher-risk constructs from the kernel body now: no nested helper inside the JIT, no stepped `S.range`, and flatter LDS indexing for the ping-pong buffers.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+codex
+The reworked kernel got past the immediate crash point. I’m waiting on the full harness result now before deciding whether another fix is needed.
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+ succeeded in 25887ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782381432.799397, "run_ended_at": 1782381456.442297, "run_wall_time_s": 23.6429, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 493.0, "ref_runtime_us": 0.588, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782381432.799505, "event_type": "eval_start"}, {"timestamp": 1782381432.799583, "event_type": "load_reference_model_start"}, {"timestamp": 1782381433.126757, "event_type": "load_reference_model_end", "duration_s": 0.327158}, {"timestamp": 1782381433.126851, "event_type": "custom_model_import_start"}, {"timestamp": 1782381433.183714, "event_type": "custom_model_import_end", "duration_s": 0.056852}, {"timestamp": 1782381433.18372, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782381433.808913, "event_type": "instantiate_and_to_device_end", "duration_s": 0.625174}, {"timestamp": 1782381433.808925, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782381435.402298, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.593363}, {"timestamp": 1782381435.402304, "event_type": "correctness_check_start"}, {"timestamp": 1782381437.38477, "event_type": "correctness_check_end", "duration_s": 1.982437}, {"timestamp": 1782381437.479664, "event_type": "candidate_profile_start"}, {"timestamp": 1782381456.29594, "event_type": "candidate_profile_end", "duration_s": 18.816226}, {"timestamp": 1782381456.392723, "event_type": "reference_profile_start"}, {"timestamp": 1782381456.440918, "event_type": "reference_profile_end", "duration_s": 0.048172}, {"timestamp": 1782381456.441114, "event_type": "cleanup_start"}, {"timestamp": 1782381456.442029, "event_type": "cleanup_end", "duration_s": 0.000909}, {"timestamp": 1782381456.442034, "event_type": "eval_end", "duration_s": 23.642528}], "load_reference_model_s": 0.327158, "custom_model_import_compile_s": 0.056852, "instantiate_and_to_device_s": 0.625174, "first_candidate_invocation_s": 1.593363, "correctness_check_s": 1.982437, "candidate_profile_wall_time_s": 18.816226, "reference_profile_wall_time_s": 0.048172, "cleanup_s": 0.000909, "eval_total_wall_time_s": 23.642528, "compile_time_s": 1.650215, "profile_time_s": 18.864398}}, "runtime_stats": {"mean": 493.0, "std": 0.0, "min": 493.0, "max": 493.0, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.588, "std": 0.0, "min": 0.588, "max": 0.588, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782381432.799505, "event_type": "eval_start"}, {"timestamp": 1782381432.799583, "event_type": "load_reference_model_start"}, {"timestamp": 1782381433.126757, "event_type": "load_reference_model_end", "duration_s": 0.327158}, {"timestamp": 1782381433.126851, "event_type": "custom_model_import_start"}, {"timestamp": 1782381433.183714, "event_type": "custom_model_import_end", "duration_s": 0.056852}, {"timestamp": 1782381433.18372, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782381433.808913, "event_type": "instantiate_and_to_device_end", "duration_s": 0.625174}, {"timestamp": 1782381433.808925, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782381435.402298, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.593363}, {"timestamp": 1782381435.402304, "event_type": "correctness_check_start"}, {"timestamp": 1782381437.38477, "event_type": "correctness_check_end", "duration_s": 1.982437}, {"timestamp": 1782381437.479664, "event_type": "candidate_profile_start"}, {"timestamp": 1782381456.29594, "event_type": "candidate_profile_end", "duration_s": 18.816226}, {"timestamp": 1782381456.392723, "event_type": "reference_profile_start"}, {"timestamp": 1782381456.440918, "event_type": "reference_profile_end", "duration_s": 0.048172}, {"timestamp": 1782381456.441114, "event_type": "cleanup_start"}, {"timestamp": 1782381456.442029, "event_type": "cleanup_end", "duration_s": 0.000909}, {"timestamp": 1782381456.442034, "event_type": "eval_end", "duration_s": 23.642528}], "load_reference_model_s": 0.327158, "custom_model_import_compile_s": 0.056852, "instantiate_and_to_device_s": 0.625174, "first_candidate_invocation_s": 1.593363, "correctness_check_s": 1.982437, "candidate_profile_wall_time_s": 18.816226, "reference_profile_wall_time_s": 0.048172, "cleanup_s": 0.000909, "eval_total_wall_time_s": 23.642528, "compile_time_s": 1.650215, "profile_time_s": 18.864398}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+codex
+Implemented the round-2 kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py). The main change is a double-buffered LDS path for the MFMA GEMM loop with K unrolled by 2, keeping the existing 4-wave 2x2 warp-grid mapping and the required MFMA accumulator/writeback invariant intact.
+
+Validation passed with the exact required command. The round-local debug result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/debug_eval.jsonl) reports `compiled: true`, `correctness: true`, and `runtime_us: 493.0`.
+diff --git a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+index fb12e46d9edf3547ab34c522a4303a5664ceba4a..97094d9b098ece3c7ef7f7c100bec2faa884302d
+--- a/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p51/optimization_rounds/round2/output_model_new.py
+@@ -66,8 +66,8 @@
+     wave_col = wave % 2
+     row_block = S.block_id(0)
+ 
+-    shared_a = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
+-    shared_b = S.make_shared((THREADS_PER_BLOCK, 4), S.u32)
++    shared_a = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
++    shared_b = S.make_shared((2 * THREADS_PER_BLOCK, 4), S.u32)
+     partial = S.make_shared((THREADS_PER_BLOCK, 16), S.f32)
+     row_partials = S.make_shared((WAVES_PER_BLOCK, 32), S.f32)
+ 
+@@ -82,23 +82,70 @@
+     for col_block in S.range(COL_BLOCKS):
+         acc = S.full((16,), 0.0, S.f32)
+ 
+-        for k_block in S.range(K_BLOCKS):
+-            a_index = (((row_block * K_BLOCKS) + k_block) * 2 + wave_row) * 64 + lane
+-            b_index = (((col_block * K_BLOCKS) + k_block) * 2 + wave_col) * 64 + lane
+-            a_words = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index * 16, S.i32), 0)
+-            b_words = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index * 16, S.i32), 0)
++        a_index_0 = (((row_block * K_BLOCKS) + 0) * 2 + wave_row) * 64 + lane
++        b_index_0 = (((col_block * K_BLOCKS) + 0) * 2 + wave_col) * 64 + lane
++        a_words_0 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_0 * 16, S.i32), 0)
++        b_words_0 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_0 * 16, S.i32), 0)
++        for word in S.range(4):
++            shared_a[tid, word] = a_words_0[word]
++            shared_b[tid, word] = b_words_0[word]
++        S.syncthreads()
+ 
++        for pair_idx in S.range((K_BLOCKS // 2) - 1):
++            k_even = pair_idx * 2
++            k_odd = k_even + 1
++            k_next_even = k_even + 2
++            k_next_odd = k_even + 3
++
++            a_index_1 = (((row_block * K_BLOCKS) + k_odd) * 2 + wave_row) * 64 + lane
++            b_index_1 = (((col_block * K_BLOCKS) + k_odd) * 2 + wave_col) * 64 + lane
++            a_words_1 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_1 * 16, S.i32), 0)
++            b_words_1 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_1 * 16, S.i32), 0)
+             for word in S.range(4):
+-                shared_a[tid, word] = a_words[word]
+-                shared_b[tid, word] = b_words[word]
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_1[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_1[word]
++
++            a_frag_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], acc)
+             S.syncthreads()
+ 
+-            a_frag = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], acc)
+-            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], acc)
++            a_index_2 = (((row_block * K_BLOCKS) + k_next_even) * 2 + wave_row) * 64 + lane
++            b_index_2 = (((col_block * K_BLOCKS) + k_next_even) * 2 + wave_col) * 64 + lane
++            a_words_2 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_2 * 16, S.i32), 0)
++            b_words_2 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_2 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[tid, word] = a_words_2[word]
++                shared_b[tid, word] = b_words_2[word]
++
++            a_frag_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            b_frag_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], acc)
++            acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], acc)
++            S.syncthreads()
++
++            a_index_3 = (((row_block * K_BLOCKS) + k_next_odd) * 2 + wave_row) * 64 + lane
++            b_index_3 = (((col_block * K_BLOCKS) + k_next_odd) * 2 + wave_col) * 64 + lane
++            a_words_3 = S.amdgpu.raw_buffer_load_x4(a_rsrc, zero_i32, S.convert(a_index_3 * 16, S.i32), 0)
++            b_words_3 = S.amdgpu.raw_buffer_load_x4(b_rsrc, zero_i32, S.convert(b_index_3 * 16, S.i32), 0)
++            for word in S.range(4):
++                shared_a[THREADS_PER_BLOCK + tid, word] = a_words_3[word]
++                shared_b[THREADS_PER_BLOCK + tid, word] = b_words_3[word]
+             S.syncthreads()
+ 
++        a_tail_0 = S.view(shared_a[tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_0 = S.view(shared_b[tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[0], b_tail_0[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_0[1], b_tail_0[1], acc)
++        S.syncthreads()
++
++        a_tail_1 = S.view(shared_a[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        b_tail_1 = S.view(shared_b[THREADS_PER_BLOCK + tid], S.Tensor((2, 4, 1), S.bf16))
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[0], b_tail_1[0], acc)
++        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_tail_1[1], b_tail_1[1], acc)
++        S.syncthreads()
++
+         col = col_block * COL_BLOCK + wave_col * 32 + (lane % 32)
+         col_bias = S.convert(BIAS0[col], S.f32) - S.convert(SUB[col], S.f32)
+         for acc_idx in S.range(16):
+
+tokens used
+28,360

@@ -1,0 +1,2314 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efe4b-8300-7a90-a26f-4d0534d67c55
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/candidate_input.py.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 3: Prompt 3
+
+Utilize range in S.amdgpu.raw_buffer_load_x4 / S.amdgpu.raw_buffer_store_* to remove the explicit branches guarding OOB access. The range is in the units of bytes. When range is set, S.amdgpu.raw_buffer_load_x4() returns 0 for OOB elements, and S.amdgpu.raw_buffer_store*() discards the OOB writes. The computations and LDS access still work with 0, and the OOB writes are discarded, therefore the optimization is safe. Removing the branches in the loop is more beneficial compared to reducing extra computations and LDS access.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the round-local kernel first, then I’ll locate the nearest MFMA example under `/workspace/substrate` and move straight into editing `output_model_new.py`.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+
+BATCH_SIZE = 128
+IN_FEATURES = 16384
+OUT_FEATURES = 16384
+DROPOUT_P = 0.2
+KEEP_SCALE = 1.25
+
+BF16_BYTES = 2
+WAVE_SIZE = 64
+WAVES_M = 2
+WAVES_N = 2
+WAVES_PER_BLOCK = WAVES_M * WAVES_N
+TILE_M = 32
+TILE_N = 32
+TILE_K = 16
+BLOCK_M = WAVES_M * TILE_M
+BLOCK_N = WAVES_N * TILE_N
+BLOCK_THREADS = WAVES_PER_BLOCK * WAVE_SIZE
+SOFTMAX_THREADS = 256
+
+
+def _gemm_launch():
+    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (BLOCK_THREADS, 1, 1))
+
+
+def _softmax_launch():
+    return ((BATCH_SIZE, 1, 1), (SOFTMAX_THREADS, 1, 1))
+
+
+@substrate.jit
+def gemm_bias_dropout_mfma_kernel(
+    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
+    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
+    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
+    MASK: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+    TMP: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    tid = S.thread_id(0)
+    warp_id = tid >> 6
+    lane = tid & 63
+
+    warp_row = warp_id >> 1
+    warp_col = warp_id & 1
+
+    tile_row_base = block_row + warp_row * TILE_M
+    tile_col_base = block_col + warp_col * TILE_N
+
+    a_words = S.make_shared((2, WAVES_PER_BLOCK, WAVE_SIZE, 4), S.u32)
+    b_words = S.make_shared((2, WAVES_PER_BLOCK, WAVE_SIZE, 4), S.u32)
+
+    acc = S.full((16,), 0.0, S.f32)
+
+    x_row_pair = lane >> 1
+    x_chunk = lane & 1
+    x_row = tile_row_base + x_row_pair
+
+    w_k_local = lane >> 2
+    w_chunk = lane & 3
+
+    x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
+
+    a_dst_lane0 = x_row_pair
+    a_dst_lane1 = x_row_pair + 32
+    a_dst_half = x_chunk * 2
+
+    b_k_group = w_k_local & 7
+    b_dst_half = (w_k_local >> 3) * 2
+    b_dst_lane0 = b_k_group + (w_chunk * 2 + 0) * 8
+    b_dst_lane1 = b_k_group + (w_chunk * 2 + 1) * 8
+
+    w_offset = S.convert((tile_col_base + w_chunk * 8) * BF16_BYTES, S.i32)
+
+    k0 = 0
+    x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
+    a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+    a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+    a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+    a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = x_packed0[3]
+
+    w_row0 = w_k_local
+    w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
+    b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+    b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+    b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+    b_words[0, warp_id, b_dst_lane1, b_dst_half + 1] = w_packed0[3]
+
+    k1 = TILE_K
+    x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
+    a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+    a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+    a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+    a_words[1, warp_id, a_dst_lane1, a_dst_half + 1] = x_packed1[3]
+
+    w_row1 = TILE_K + w_k_local
+    w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
+    b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+    b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+    b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+    b_words[1, warp_id, b_dst_lane1, b_dst_half + 1] = w_packed1[3]
+
+    S.syncthreads()
+
+    for k_base in S.range(0, IN_FEATURES - TILE_K * 2, TILE_K * 2):
+        load_k0 = k_base + TILE_K * 2
+        load_k1 = k_base + TILE_K * 3
+
+        next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
+        next_w_row0 = load_k0 + w_k_local
+        next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
+
+        a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+        a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = next_x_packed0[0]
+        a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = next_x_packed0[1]
+        b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = next_w_packed0[0]
+        b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = next_w_packed0[1]
+        b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = next_w_packed0[2]
+        b_words[0, warp_id, b_dst_lane1, b_dst_half + 1] = next_w_packed0[3]
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
+        a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = next_x_packed0[2]
+        a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+
+        next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
+        next_w_row1 = load_k1 + w_k_local
+        next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
+
+        a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
+        a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = next_x_packed1[0]
+        a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = next_x_packed1[1]
+        b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = next_w_packed1[0]
+        b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = next_w_packed1[1]
+        b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = next_w_packed1[2]
+        b_words[1, warp_id, b_dst_lane1, b_dst_half + 1] = next_w_packed1[3]
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+        a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = next_x_packed1[2]
+        a_words[1, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed1[3]
+
+        S.syncthreads()
+
+    a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
+
+    a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+
+    col = tile_col_base + (lane & 31)
+    lane_row_group = lane >> 5
+    keep_scale = S.convert(KEEP_SCALE, S.f32)
+
+    for acc_idx in S.range(16):
+        row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
+        out_val = acc[acc_idx]
+        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
+        TMP[row, col] = S.convert(out_val, S.bf16)
+
+
+@substrate.jit
+def row_softmax_kernel(
+    TMP: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    row = S.block_id(0)
+    tid = S.thread_id(0)
+
+    shared_max = S.make_shared((SOFTMAX_THREADS,), S.f32)
+    shared_sum = S.make_shared((SOFTMAX_THREADS,), S.f32)
+
+    local_max = S.convert(-1e30, S.f32)
+    for col in S.range(tid, OUT_FEATURES, SOFTMAX_THREADS):
+        v = S.convert(TMP[row, col], S.f32)
+        if v > local_max:
+            local_max = v
+    shared_max[tid] = local_max
+    S.syncthreads()
+
+    stride = SOFTMAX_THREADS >> 1
+    for _ in S.range(8):
+        if tid < stride:
+            other = shared_max[tid + stride]
+            if other > shared_max[tid]:
+                shared_max[tid] = other
+        S.syncthreads()
+        stride = stride >> 1
+
+    row_max = shared_max[0]
+
+    local_sum = S.convert(0.0, S.f32)
+    for col in S.range(tid, OUT_FEATURES, SOFTMAX_THREADS):
+        local_sum += S.exp(S.convert(TMP[row, col], S.f32) - row_max)
+    shared_sum[tid] = local_sum
+    S.syncthreads()
+
+    stride = SOFTMAX_THREADS >> 1
+    for _ in S.range(8):
+        if tid < stride:
+            shared_sum[tid] = shared_sum[tid] + shared_sum[tid + stride]
+        S.syncthreads()
+        stride = stride >> 1
+
+    row_sum = shared_sum[0]
+
+    for col in S.range(tid, OUT_FEATURES, SOFTMAX_THREADS):
+        out = S.exp(S.convert(TMP[row, col], S.f32) - row_max) / row_sum
+        Y[row, col] = S.convert(out, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, dropout_p):
+        super().__init__()
+        self.matmul = nn.Linear(in_features, out_features)
+        self.dropout = nn.Dropout(dropout_p)
+        self._cached_weight_key = None
+        self._cached_weight_t = None
+        self._cached_bias_key = None
+        self._cached_bias = None
+
+    def _get_weight_t(self, x: torch.Tensor) -> torch.Tensor:
+        weight = self.matmul.weight
+        key = (x.device, x.dtype, weight.data_ptr(), tuple(weight.shape))
+        if self._cached_weight_key != key:
+            self._cached_weight_t = weight.t().to(device=x.device, dtype=x.dtype).contiguous()
+            self._cached_weight_key = key
+        return self._cached_weight_t
+
+    def _get_bias(self, x: torch.Tensor) -> torch.Tensor:
+        bias = self.matmul.bias
+        key = (x.device, x.dtype, bias.data_ptr(), tuple(bias.shape))
+        if self._cached_bias_key != key:
+
+exec
+/bin/bash -lc "rg -n --glob '*.py' 'mfma|raw_buffer_load_x4|raw_buffer_store' /workspace/substrate" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:12:def gemm_mfma_16x16x16(
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:24:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:25:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:31:def gemm_mfma_32x32x8_bf16(
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:34:    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:35:    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:36:    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:100:        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_store_subview.py:24:    S.amdgpu.raw_buffer_store_x4(src[0], out_rsrc, zero, zero, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_store_subview.py:39:    S.amdgpu.raw_buffer_store_x4(src[0], row_rsrc, zero, zero, 0)
+
+codex
+I have the kernel structure. Next I’m pulling the local MFMA example and the rest of the model wrapper, then I’ll patch in range-based raw buffer ops and remove the explicit OOB guards from the kernel path.
+exec
+/bin/bash -lc "sed -n '261,420p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+            self._cached_bias = bias.to(device=x.device, dtype=x.dtype).contiguous()
+            self._cached_bias_key = key
+        return self._cached_bias
+
+    def forward(self, x):
+        if tuple(x.shape) != (BATCH_SIZE, IN_FEATURES) or x.dtype != torch.bfloat16 or self.dropout.p != DROPOUT_P:
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+
+        x_contig = x.contiguous()
+        w_t = self._get_weight_t(x_contig)
+        bias = self._get_bias(x_contig)
+        mask = (torch.rand((BATCH_SIZE, OUT_FEATURES), device=x.device) > DROPOUT_P).to(dtype=x.dtype)
+        tmp = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=x.dtype)
+
+        gemm_bias_dropout_mfma_kernel[_gemm_launch](x_contig, w_t, bias, mask.contiguous(), tmp)
+        row_softmax_kernel[_softmax_launch](tmp, y)
+        return y
+
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+codex
+The remaining unknown is the exact `range` argument position for AMDGPU buffer ops. I’m checking one local buffer-op test, then I’ll write the kernel directly.
+exec
+/bin/bash -lc "sed -n '1,180p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+import _substrate_bindings as _C
+from substrate.compiler.code_generator import (
+    _build_import_module,
+    _collect_jit_dependencies,
+    _get_function_def,
+)
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_roundtrip(
+    src: S.Tensor((7,), S.i32),
+    dst: S.Tensor((7,), S.i32),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+    dst_rsrc = S.amdgpu.make_rsrc(dst, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    offset_x2 = S.convert(4, S.i32)
+    offset_x4 = S.convert(12, S.i32)
+
+    value_x1 = S.amdgpu.raw_buffer_load_x1(src_rsrc, zero, zero, 0)
+    value_x2 = S.amdgpu.raw_buffer_load_x2(src_rsrc, zero, offset_x2, 0)
+    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+
+    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_bf16_view(
+    src: S.Tensor((8,), S.bf16),
+    dst: S.Tensor((8,), S.bf16),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+    frag = S.view(packed, S.Tensor((2, 4, 1), S.bf16))
+
+    for i in S.range(2):
+        for j in S.range(4):
+            dst[i * 4 + j] = frag[i, j, 0]
+
+
+def generate_mlir(jit_fn) -> str:
+    jit_deps = _collect_jit_dependencies(jit_fn)
+    import_module = _build_import_module([jit_fn, *jit_deps])
+
+    generator = _C.MLIRGenerator()
+    generator.generate_from_python_ast(import_module)
+
+    for dep in jit_deps:
+        dep_func = _get_function_def(dep.parse())
+        generator.visit_function_def(dep_func, "[]", "jit")
+
+    kernel_func = _get_function_def(jit_fn.parse())
+    generator.visit_function_def(kernel_func, "[]", "kernel")
+    return generator.get_mlir()
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferOps(unittest.TestCase):
+    def test_raw_buffer_roundtrip(self):
+        src = torch.arange(7, dtype=torch.int32, device="cuda") * 17 - 9
+        dst = torch.full((7,), -1, dtype=torch.int32, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_roundtrip[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+    def test_make_rsrc_generates_pointer_and_range(self):
+        mlir = generate_mlir(kernel_amdgpu_raw_buffer_roundtrip)
+
+        self.assertIn(
+            "substrate.memref.extract_aligned_pointer_as_index",
+            mlir,
+        )
+        self.assertGreaterEqual(mlir.count("vector.insert %arg2"), 2, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_load"), 3, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+
+    def test_raw_buffer_bf16_view_extract(self):
+        src = torch.randn((8,), dtype=torch.bfloat16, device="cuda")
+        dst = torch.zeros((8,), dtype=torch.bfloat16, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_bf16_view[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+codex
+I have enough context to patch the output kernel now. The change is narrow: keep the existing software-pipelined MFMA structure, switch the global buffer path to explicit ranged resources, and use ranged raw-buffer stores for the output path.
+exec
+/bin/bash -lc 'ls -1 /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+agent_command.txt
+agent_stderr.txt
+agent_stdout.txt
+candidate_input.py
+case.txt
+eval_config.json
+input_model.py
+output_model_new.py
+prompt.txt
+
+exec
+/bin/bash -lc 'cp /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/candidate_input.py /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..8e2cd2f2caa2210af400874aac66c748b088a434
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,12 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
++    tmp_rsrc = S.amdgpu.make_rsrc(TMP, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +88,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +96,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +105,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +113,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +127,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +149,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,9 +188,14 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
+-        TMP[row, col] = S.convert(out_val, S.bf16)
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
++        S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+ 
+ 
+ @substrate.jit
+
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..8e2cd2f2caa2210af400874aac66c748b088a434
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,12 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
++    tmp_rsrc = S.amdgpu.make_rsrc(TMP, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +88,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +96,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +105,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +113,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +127,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +149,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,9 +188,14 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
+-        TMP[row, col] = S.convert(out_val, S.bf16)
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
++        S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+ 
+ 
+ @substrate.jit
+
+codex
+The first pass is in place. I’m validating immediately so any fixes are driven by concrete compiler/runtime feedback rather than more file reading.
+exec
+/bin/bash -lc "sed -n '1,240p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+
+BATCH_SIZE = 128
+IN_FEATURES = 16384
+OUT_FEATURES = 16384
+DROPOUT_P = 0.2
+KEEP_SCALE = 1.25
+
+BF16_BYTES = 2
+IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
+OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
+MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+WAVE_SIZE = 64
+WAVES_M = 2
+WAVES_N = 2
+WAVES_PER_BLOCK = WAVES_M * WAVES_N
+TILE_M = 32
+TILE_N = 32
+TILE_K = 16
+BLOCK_M = WAVES_M * TILE_M
+BLOCK_N = WAVES_N * TILE_N
+BLOCK_THREADS = WAVES_PER_BLOCK * WAVE_SIZE
+SOFTMAX_THREADS = 256
+
+
+def _gemm_launch():
+    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (BLOCK_THREADS, 1, 1))
+
+
+def _softmax_launch():
+    return ((BATCH_SIZE, 1, 1), (SOFTMAX_THREADS, 1, 1))
+
+
+@substrate.jit
+def gemm_bias_dropout_mfma_kernel(
+    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
+    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
+    BIAS0: S.Tensor((OUT_FEATURES,), S.bf16),
+    MASK: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+    TMP: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    block_row = S.block_id(1) * BLOCK_M
+    block_col = S.block_id(0) * BLOCK_N
+
+    tid = S.thread_id(0)
+    warp_id = tid >> 6
+    lane = tid & 63
+
+    warp_row = warp_id >> 1
+    warp_col = warp_id & 1
+
+    tile_row_base = block_row + warp_row * TILE_M
+    tile_col_base = block_col + warp_col * TILE_N
+
+    a_words = S.make_shared((2, WAVES_PER_BLOCK, WAVE_SIZE, 4), S.u32)
+    b_words = S.make_shared((2, WAVES_PER_BLOCK, WAVE_SIZE, 4), S.u32)
+
+    acc = S.full((16,), 0.0, S.f32)
+
+    x_row_pair = lane >> 1
+    x_chunk = lane & 1
+    x_row = tile_row_base + x_row_pair
+
+    w_k_local = lane >> 2
+    w_chunk = lane & 3
+
+    zero = S.convert(0, S.i32)
+    x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
+    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
+    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+    tmp_rsrc = S.amdgpu.make_rsrc(TMP, MASK_BYTES)
+
+    a_dst_lane0 = x_row_pair
+    a_dst_lane1 = x_row_pair + 32
+    a_dst_half = x_chunk * 2
+
+    b_k_group = w_k_local & 7
+    b_dst_half = (w_k_local >> 3) * 2
+    b_dst_lane0 = b_k_group + (w_chunk * 2 + 0) * 8
+    b_dst_lane1 = b_k_group + (w_chunk * 2 + 1) * 8
+
+    w_offset = S.convert((tile_col_base + w_chunk * 8) * BF16_BYTES, S.i32)
+
+    k0 = 0
+    x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+    a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+    a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+    a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+    a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = x_packed0[3]
+
+    w_row0 = w_k_local
+    w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
+    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+    b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+    b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+    b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+    b_words[0, warp_id, b_dst_lane1, b_dst_half + 1] = w_packed0[3]
+
+    k1 = TILE_K
+    x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+    a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+    a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+    a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+    a_words[1, warp_id, a_dst_lane1, a_dst_half + 1] = x_packed1[3]
+
+    w_row1 = TILE_K + w_k_local
+    w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
+    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+    b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+    b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+    b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+    b_words[1, warp_id, b_dst_lane1, b_dst_half + 1] = w_packed1[3]
+
+    S.syncthreads()
+
+    for k_base in S.range(0, IN_FEATURES - TILE_K * 2, TILE_K * 2):
+        load_k0 = k_base + TILE_K * 2
+        load_k1 = k_base + TILE_K * 3
+
+        next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+        next_w_row0 = load_k0 + w_k_local
+        next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
+        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+
+        a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+        a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = next_x_packed0[0]
+        a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = next_x_packed0[1]
+        b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = next_w_packed0[0]
+        b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = next_w_packed0[1]
+        b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = next_w_packed0[2]
+        b_words[0, warp_id, b_dst_lane1, b_dst_half + 1] = next_w_packed0[3]
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
+        a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = next_x_packed0[2]
+        a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+
+        next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+        next_w_row1 = load_k1 + w_k_local
+        next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
+        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+
+        a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
+        a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = next_x_packed1[0]
+        a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = next_x_packed1[1]
+        b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = next_w_packed1[0]
+        b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = next_w_packed1[1]
+        b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = next_w_packed1[2]
+        b_words[1, warp_id, b_dst_lane1, b_dst_half + 1] = next_w_packed1[3]
+
+        acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+        a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = next_x_packed1[2]
+        a_words[1, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed1[3]
+
+        S.syncthreads()
+
+    a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[0], b_frag0[0], acc)
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag0[1], b_frag0[1], acc)
+
+    a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[0], b_frag1[0], acc)
+    acc = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag1[1], b_frag1[1], acc)
+
+    col = tile_col_base + (lane & 31)
+    lane_row_group = lane >> 5
+    keep_scale = S.convert(KEEP_SCALE, S.f32)
+
+    for acc_idx in S.range(16):
+        row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
+        col_offset = S.convert(col * BF16_BYTES, S.i32)
+        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+        out_val = acc[acc_idx]
+        out_val = (
+            out_val
+            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
+        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+        S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+
+
+@substrate.jit
+def row_softmax_kernel(
+    TMP: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    row = S.block_id(0)
+    tid = S.thread_id(0)
+
+    shared_max = S.make_shared((SOFTMAX_THREADS,), S.f32)
+    shared_sum = S.make_shared((SOFTMAX_THREADS,), S.f32)
+
+    local_max = S.convert(-1e30, S.f32)
+    for col in S.range(tid, OUT_FEATURES, SOFTMAX_THREADS):
+        v = S.convert(TMP[row, col], S.f32)
+        if v > local_max:
+            local_max = v
+    shared_max[tid] = local_max
+    S.syncthreads()
+
+    stride = SOFTMAX_THREADS >> 1
+    for _ in S.range(8):
+        if tid < stride:
+            other = shared_max[tid + stride]
+            if other > shared_max[tid]:
+                shared_max[tid] = other
+        S.syncthreads()
+        stride = stride >> 1
+
+    row_max = shared_max[0]
+
+    local_sum = S.convert(0.0, S.f32)
+    for col in S.range(tid, OUT_FEATURES, SOFTMAX_THREADS):
+        local_sum += S.exp(S.convert(TMP[row, col], S.f32) - row_max)
+    shared_sum[tid] = local_sum
+    S.syncthreads()
+
+    stride = SOFTMAX_THREADS >> 1
+    for _ in S.range(8):
+        if tid < stride:
+            shared_sum[tid] = shared_sum[tid] + shared_sum[tid + stride]
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..8e2cd2f2caa2210af400874aac66c748b088a434
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,12 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
++    tmp_rsrc = S.amdgpu.make_rsrc(TMP, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +88,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +96,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +105,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +113,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +127,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +149,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,9 +188,14 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
+-        TMP[row, col] = S.convert(out_val, S.bf16)
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
++        S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+ 
+ 
+ @substrate.jit
+
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..8e2cd2f2caa2210af400874aac66c748b088a434
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,12 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
++    tmp_rsrc = S.amdgpu.make_rsrc(TMP, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +88,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +96,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +105,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +113,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +127,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +149,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,9 +188,14 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
+-        TMP[row, col] = S.convert(out_val, S.bf16)
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
++        S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+ 
+ 
+ @substrate.jit
+
+ exited 1 in 5660ms:
+/tmp/tmprook4hb5.py:198:9: error: Unimplemented: 'raw_buffer_store_x1 expects i32 data type'
+  198 |         S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+      |         ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+codex
+The compiler failure is specific: `raw_buffer_store_x1` wants `i32`. I’m making one focused fix by matching the store width/type requirements, then rerunning the round-local eval.
+exec
+/bin/bash -lc "sed -n '1,120p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_store_subview.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+BF16_BYTES = 2
+
+
+@substrate.jit
+def kernel_store_x4_full_rsrc(
+    src: S.Tensor((1, 4), S.u32),
+    out_ptr: S.Pointer(S.bf16),
+    m: S.u32,
+    n: S.u32,
+):
+    out_memref = S.make_tensor(out_ptr, S.bf16, S.make_layout((m * n,), (1,)))
+    out_rsrc = S.amdgpu.make_rsrc(out_memref, m * n * BF16_BYTES)
+    zero = S.convert(0, S.u32)
+    S.amdgpu.raw_buffer_store_x4(src[0], out_rsrc, zero, zero, 0)
+
+
+@substrate.jit
+def kernel_store_x4_row_subview_rsrc(
+    src: S.Tensor((1, 4), S.u32),
+    out_ptr: S.Pointer(S.bf16),
+    m: S.u32,
+    n: S.u32,
+    row: S.u32,
+):
+    out_memref = S.make_tensor(out_ptr, S.bf16, S.make_layout((m * n,), (1,)))
+    row_view = S.subview(out_memref, (row * n,), (n,), (1,))
+    row_rsrc = S.amdgpu.make_rsrc(row_view, n * BF16_BYTES)
+    zero = S.convert(0, S.u32)
+    S.amdgpu.raw_buffer_store_x4(src[0], row_rsrc, zero, zero, 0)
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferStoreSubview(unittest.TestCase):
+    def test_row_subview_rsrc_honors_subview_offset(self):
+        values = torch.tensor(
+            [[0x3F803F80, 0x40004000, 0x40404040, 0x40804080]],
+            dtype=torch.int32,
+            device="cuda",
+        ).view(torch.uint32)
+
+        out_full = torch.zeros((4, 8), dtype=torch.bfloat16, device="cuda")
+        out_subview = torch.zeros((4, 8), dtype=torch.bfloat16, device="cuda")
+
+        kernel_store_x4_full_rsrc[lambda: ((1, 1, 1), (1, 1, 1))](
+            values, out_full, out_full.shape[0], out_full.shape[1]
+        )
+        kernel_store_x4_row_subview_rsrc[lambda: ((1, 1, 1), (1, 1, 1))](
+            values, out_subview, out_subview.shape[0], out_subview.shape[1], 1
+        )
+
+        expected = torch.tensor(
+            [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0],
+            dtype=torch.bfloat16,
+        )
+
+        self.assertTrue(torch.equal(out_full[0].cpu(), expected))
+        self.assertTrue(torch.equal(out_subview[1].cpu(), expected))
+        self.assertTrue(
+            torch.equal(out_subview[0].cpu(), torch.zeros_like(expected)),
+            f"Subview-backed descriptor wrote the wrong row:\n{out_subview.cpu()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..8e2cd2f2caa2210af400874aac66c748b088a434
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,12 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
++    tmp_rsrc = S.amdgpu.make_rsrc(TMP, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +88,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +96,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +105,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +113,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +127,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +149,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,9 +188,14 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
+-        TMP[row, col] = S.convert(out_val, S.bf16)
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
++        S.amdgpu.raw_buffer_store_x1(S.convert(out_val, S.bf16), tmp_rsrc, zero, row_offset, 0)
+ 
+ 
+ @substrate.jit
+
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+ succeeded in 8711ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+codex
+The store-width issue is resolved by backing off the unsupported scalar raw-buffer store. The validation run is still in flight now.
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+exec
+/bin/bash -lc 'tail -n 5 /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/debug_eval.jsonl' in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782382947.608881, "run_ended_at": 1782382954.081642, "run_wall_time_s": 6.47276, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 8.72, "ref_runtime_us": 0.249, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782382947.608995, "event_type": "eval_start"}, {"timestamp": 1782382947.609073, "event_type": "load_reference_model_start"}, {"timestamp": 1782382948.921069, "event_type": "load_reference_model_end", "duration_s": 1.311969}, {"timestamp": 1782382948.92118, "event_type": "custom_model_import_start"}, {"timestamp": 1782382948.992471, "event_type": "custom_model_import_end", "duration_s": 0.071276}, {"timestamp": 1782382948.99248, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782382950.862865, "event_type": "instantiate_and_to_device_end", "duration_s": 1.87034}, {"timestamp": 1782382950.862898, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782382952.369228, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.506312}, {"timestamp": 1782382952.369236, "event_type": "correctness_check_start"}, {"timestamp": 1782382953.652826, "event_type": "correctness_check_end", "duration_s": 1.283572}, {"timestamp": 1782382953.663369, "event_type": "candidate_profile_start"}, {"timestamp": 1782382954.038908, "event_type": "candidate_profile_end", "duration_s": 0.375511}, {"timestamp": 1782382954.051578, "event_type": "reference_profile_start"}, {"timestamp": 1782382954.080906, "event_type": "reference_profile_end", "duration_s": 0.02931}, {"timestamp": 1782382954.081054, "event_type": "cleanup_start"}, {"timestamp": 1782382954.081498, "event_type": "cleanup_end", "duration_s": 0.000438}, {"timestamp": 1782382954.081502, "event_type": "eval_end", "duration_s": 6.472507}], "load_reference_model_s": 1.311969, "custom_model_import_compile_s": 0.071276, "instantiate_and_to_device_s": 1.87034, "first_candidate_invocation_s": 1.506312, "correctness_check_s": 1.283572, "candidate_profile_wall_time_s": 0.375511, "reference_profile_wall_time_s": 0.02931, "cleanup_s": 0.000438, "eval_total_wall_time_s": 6.472507, "compile_time_s": 1.577588, "profile_time_s": 0.404821}}, "runtime_stats": {"mean": 8.72, "std": 0.0, "min": 8.72, "max": 8.72, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.249, "std": 0.0, "min": 0.249, "max": 0.249, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782382947.608995, "event_type": "eval_start"}, {"timestamp": 1782382947.609073, "event_type": "load_reference_model_start"}, {"timestamp": 1782382948.921069, "event_type": "load_reference_model_end", "duration_s": 1.311969}, {"timestamp": 1782382948.92118, "event_type": "custom_model_import_start"}, {"timestamp": 1782382948.992471, "event_type": "custom_model_import_end", "duration_s": 0.071276}, {"timestamp": 1782382948.99248, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782382950.862865, "event_type": "instantiate_and_to_device_end", "duration_s": 1.87034}, {"timestamp": 1782382950.862898, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782382952.369228, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 1.506312}, {"timestamp": 1782382952.369236, "event_type": "correctness_check_start"}, {"timestamp": 1782382953.652826, "event_type": "correctness_check_end", "duration_s": 1.283572}, {"timestamp": 1782382953.663369, "event_type": "candidate_profile_start"}, {"timestamp": 1782382954.038908, "event_type": "candidate_profile_end", "duration_s": 0.375511}, {"timestamp": 1782382954.051578, "event_type": "reference_profile_start"}, {"timestamp": 1782382954.080906, "event_type": "reference_profile_end", "duration_s": 0.02931}, {"timestamp": 1782382954.081054, "event_type": "cleanup_start"}, {"timestamp": 1782382954.081498, "event_type": "cleanup_end", "duration_s": 0.000438}, {"timestamp": 1782382954.081502, "event_type": "eval_end", "duration_s": 6.472507}], "load_reference_model_s": 1.311969, "custom_model_import_compile_s": 0.071276, "instantiate_and_to_device_s": 1.87034, "first_candidate_invocation_s": 1.506312, "correctness_check_s": 1.283572, "candidate_profile_wall_time_s": 0.375511, "reference_profile_wall_time_s": 0.02931, "cleanup_s": 0.000438, "eval_total_wall_time_s": 6.472507, "compile_time_s": 1.577588, "profile_time_s": 0.404821}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+codex
+Implemented the round-3 kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py). The GEMM path now uses ranged AMDGPU buffer resources for the global `X` and `W` `raw_buffer_load_x4` traffic, and the epilogue bias/mask fetches were moved to ranged raw-buffer loads as well while preserving the existing software-pipelined double-buffered MFMA structure.
+
+Validation passed with the required command. The round-local eval in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/debug_eval.jsonl) reports `compiled: true`, `correctness: true`, and `runtime_us: 8.72`.
+diff --git a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+index 463b5f51495a1b1516466d235010d7db1638ff07..1cba2a445f6f67fe3c8471023d7443f7abe8f195
+--- a/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p66/optimization_rounds/round3/output_model_new.py
+@@ -11,6 +11,9 @@
+ KEEP_SCALE = 1.25
+ 
+ BF16_BYTES = 2
++IN_FEATURES_BYTES = IN_FEATURES * BF16_BYTES
++OUT_FEATURES_BYTES = OUT_FEATURES * BF16_BYTES
++MASK_BYTES = BATCH_SIZE * OUT_FEATURES * BF16_BYTES
+ WAVE_SIZE = 64
+ WAVES_M = 2
+ WAVES_N = 2
+@@ -65,8 +68,11 @@
+     w_k_local = lane >> 2
+     w_chunk = lane & 3
+ 
++    zero = S.convert(0, S.i32)
+     x_row_view = S.subview(X, (x_row, 0), (1, IN_FEATURES), (1, 1))
+-    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES * BF16_BYTES)
++    x_rsrc = S.amdgpu.make_rsrc(x_row_view, IN_FEATURES_BYTES)
++    bias_rsrc = S.amdgpu.make_rsrc(BIAS0, OUT_FEATURES_BYTES)
++    mask_rsrc = S.amdgpu.make_rsrc(MASK, MASK_BYTES)
+ 
+     a_dst_lane0 = x_row_pair
+     a_dst_lane1 = x_row_pair + 32
+@@ -81,7 +87,7 @@
+ 
+     k0 = 0
+     x_offset0 = S.convert((k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset0, 0)
++    x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset0, 0)
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed0[0]
+     a_words[0, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed0[1]
+     a_words[0, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed0[2]
+@@ -89,8 +95,8 @@
+ 
+     w_row0 = w_k_local
+     w_row_view0 = S.subview(W, (w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES * BF16_BYTES)
+-    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc0 = S.amdgpu.make_rsrc(w_row_view0, OUT_FEATURES_BYTES)
++    w_packed0 = S.amdgpu.raw_buffer_load_x4(w_rsrc0, zero, w_offset, 0)
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed0[0]
+     b_words[0, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed0[1]
+     b_words[0, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed0[2]
+@@ -98,7 +104,7 @@
+ 
+     k1 = TILE_K
+     x_offset1 = S.convert((k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), x_offset1, 0)
++    x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset1, 0)
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 0] = x_packed1[0]
+     a_words[1, warp_id, a_dst_lane0, a_dst_half + 1] = x_packed1[1]
+     a_words[1, warp_id, a_dst_lane1, a_dst_half + 0] = x_packed1[2]
+@@ -106,8 +112,8 @@
+ 
+     w_row1 = TILE_K + w_k_local
+     w_row_view1 = S.subview(W, (w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES * BF16_BYTES)
+-    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++    w_rsrc1 = S.amdgpu.make_rsrc(w_row_view1, OUT_FEATURES_BYTES)
++    w_packed1 = S.amdgpu.raw_buffer_load_x4(w_rsrc1, zero, w_offset, 0)
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 0] = w_packed1[0]
+     b_words[1, warp_id, b_dst_lane0, b_dst_half + 1] = w_packed1[1]
+     b_words[1, warp_id, b_dst_lane1, b_dst_half + 0] = w_packed1[2]
+@@ -120,11 +126,11 @@
+         load_k1 = k_base + TILE_K * 3
+ 
+         next_x_offset0 = S.convert((load_k0 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset0, 0)
++        next_x_packed0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset0, 0)
+         next_w_row0 = load_k0 + w_k_local
+         next_w_row_view0 = S.subview(W, (next_w_row0, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc0 = S.amdgpu.make_rsrc(next_w_row_view0, OUT_FEATURES_BYTES)
++        next_w_packed0 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc0, zero, w_offset, 0)
+ 
+         a_frag0 = S.view(a_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag0 = S.view(b_words[0, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -142,11 +148,11 @@
+         a_words[0, warp_id, a_dst_lane1, a_dst_half + 1] = next_x_packed0[3]
+ 
+         next_x_offset1 = S.convert((load_k1 + x_chunk * 8) * BF16_BYTES, S.i32)
+-        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, S.convert(0, S.i32), next_x_offset1, 0)
++        next_x_packed1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, next_x_offset1, 0)
+         next_w_row1 = load_k1 + w_k_local
+         next_w_row_view1 = S.subview(W, (next_w_row1, 0), (1, OUT_FEATURES), (1, 1))
+-        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES * BF16_BYTES)
+-        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, S.convert(0, S.i32), w_offset, 0)
++        next_w_rsrc1 = S.amdgpu.make_rsrc(next_w_row_view1, OUT_FEATURES_BYTES)
++        next_w_packed1 = S.amdgpu.raw_buffer_load_x4(next_w_rsrc1, zero, w_offset, 0)
+ 
+         a_frag1 = S.view(a_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+         b_frag1 = S.view(b_words[1, warp_id, lane], S.Tensor((2, 4, 1), S.bf16))
+@@ -181,8 +187,13 @@
+ 
+     for acc_idx in S.range(16):
+         row = tile_row_base + 8 * (acc_idx >> 2) + 4 * lane_row_group + (acc_idx & 3)
++        col_offset = S.convert(col * BF16_BYTES, S.i32)
++        row_offset = S.convert((row * OUT_FEATURES + col) * BF16_BYTES, S.i32)
+         out_val = acc[acc_idx]
+-        out_val = (out_val + S.convert(BIAS0[col], S.f32)) * S.convert(MASK[row, col], S.f32) * keep_scale
++        out_val = (
++            out_val
++            + S.convert(S.amdgpu.raw_buffer_load_x1(bias_rsrc, zero, col_offset, 0), S.f32)
++        ) * S.convert(S.amdgpu.raw_buffer_load_x1(mask_rsrc, zero, row_offset, 0), S.f32) * keep_scale
+         TMP[row, col] = S.convert(out_val, S.bf16)
+ 
+ 
+
+tokens used
+42,874

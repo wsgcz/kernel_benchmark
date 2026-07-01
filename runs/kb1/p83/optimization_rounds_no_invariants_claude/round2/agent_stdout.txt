@@ -1,0 +1,31 @@
+The implementation is complete and validated. Let me provide a summary:
+
+## Summary
+
+I implemented Split-K optimization for the MFMA Conv2D kernel with `SPLIT_K_SLICES = 2`:
+
+### Key Changes:
+1. **Split-K Kernel Structure**: The grid is extended by `SPLIT_K_SLICES`, with each block's `linear_block_id = tile_block_id * SPLIT_K_SLICES + split_k_id`
+
+2. **Channel Partition**: Following the invariant:
+   - `c_per_split = ceil_div(in_channels, SPLIT_K_SLICES) = 4`
+   - Split 0: channels 0-3
+   - Split 1: channels 4-7
+
+3. **K Linearization**: Using `k_idx = c * kernel_area + kh * kernel_w + kw` as specified
+
+4. **Operand Layout**: Reading input and weights directly as NCHW/OIHW tensors without pre-permutation
+
+5. **Workspace**: Using fp32 workspace with GEMM-major indexing for partial accumulations
+
+6. **Finalization Kernel**: Converts the fp32 workspace back to NCHW output
+
+### Files Modified:
+- `/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p83/optimization_rounds_no_invariants_claude/round2/output_model_new.py` - Main kernel implementation
+- `/workspace/substrate/test/examples/conv2d/amdgpu/test_conv2d_asym.py` - Updated to import from correct path
+- `/workspace/substrate/benchmark/conv2d/bench_conv2d.py` - Updated for depthwise conv configuration
+
+### Validation Results:
+- All 3 tests passed
+- Benchmark validation: `max_abs_diff: 0.000000`
+- Performance: ~0.45 TFLOPS, ~604 GB/s bandwidth

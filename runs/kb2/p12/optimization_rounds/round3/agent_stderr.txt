@@ -1,0 +1,3297 @@
+OpenAI Codex v0.142.0
+--------
+workdir: /workspace/kernel_benchmark
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019efe1d-ea7a-7a91-9715-a2157401fd7f
+--------
+user
+Read the starting kernel from /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/candidate_input.py.
+Write the final optimized kernel only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py.
+Do not modify /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/candidate_input.py.
+
+## 2: Prompt 2
+
+Implement software pipelining to overlap MFMA, LDS access and global memory access. Use double buffering. Unroll the K-loop by 2 to minimize branching. Split the LDS access and overlap with MFMA in a fine-grain way to reduce the size of the working sets of the shared memroy A/B.
+
+The optimization above has been completed. Please complete the next optimization.
+
+## 3: Prompt 3
+
+Utilize range in S.amdgpu.raw_buffer_load_x4 / S.amdgpu.raw_buffer_store_* to remove the explicit branches guarding OOB access. The range is in the units of bytes. When range is set, S.amdgpu.raw_buffer_load_x4() returns 0 for OOB elements, and S.amdgpu.raw_buffer_store*() discards the OOB writes. The computations and LDS access still work with 0, and the OOB writes are discarded, therefore the optimization is safe. Removing the branches in the loop is more beneficial compared to reducing extra computations and LDS access.
+
+Evaluation command for this round:
+- The orchestrator has already created the fixed round-local case list at /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/case.txt. It contains exactly one line: /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3.
+- Do not edit, overwrite, append to, move, or recreate /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/case.txt.
+- If you manually run correctness/debug evaluation, use exactly this command and no other correctness/eval command:
+  /opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance
+- Write debug evaluation output only to /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/debug_eval.jsonl.
+- Do not create, read, or write any shared `case.txt`, `path/to/case.txt`, or other case-list file outside the current round directory.
+
+Strict constraints:
+- Do not browse the web.
+- Do not search online for documentation, examples, repos, or references.
+- Do not use any network access at all.
+- Use only the files already present in the workspace dir.
+- Do not read any other kernel from anywhere in the space!!!
+
+Read only files under /workspace/substrate and under /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3.
+You may read test and evaluation output files only if they are inside /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3.
+Do not read files outside those allowed locations.
+
+Additional requirements for this Codex round:
+- Follow the prompt instructions exactly and do not deviate from them.
+- This round is time-critical. Optimize for speed of execution, not for completeness of research.
+- Do not repeatedly reread the same files unless it is strictly necessary to fix a concrete error.
+- Work in a Codex-like style: read only the minimum necessary files, move to implementation quickly, and avoid long research detours.
+- Read `candidate_input.py` first and use the nearest local MFMA example as the main reference. After that, only read a very small number of additional files if they are strictly necessary.
+- Do not read more than 3 additional files under `/workspace/substrate` beyond the main local MFMA example unless a concrete compile or runtime error forces you to do so.
+- Start editing `output_model_new.py` as soon as you have the minimum information needed for a first working attempt.
+- You must begin editing `output_model_new.py` within the first 5 minutes of the round.
+- Default workflow:
+  1. Read `candidate_input.py`.
+  2. Read the nearest local MFMA example.
+  3. Start editing `output_model_new.py`.
+  4. Run validation.
+  5. Make only focused fixes required by concrete errors.
+- Do not continue searching for more references before step 3.
+- Prefer a minimal working implementation over a long investigation of the perfect implementation.
+- Use the existing kernel and the nearest local example as your primary references. Do not keep searching for many more examples once you have enough to start.
+- Do not spend time reverse-engineering compiler internals, lowering rules, or unrelated runtime details unless a concrete compile error forces you to do so.
+- Do not read deep Substrate implementation files such as lowering / expr_generator / compiler internals unless you are blocked by a specific error that cannot be resolved otherwise.
+- In particular, do not read `/workspace/substrate/lib/**`, `/workspace/substrate/include/**`, MLIR files, lowering code, compiler code, or expr_generator-related files unless a concrete compile error explicitly requires it.
+- Do not inspect compiler internals just to gain confidence. If you have not yet edited `output_model_new.py`, continue implementing instead of reading more infrastructure code.
+- Do not spend multiple turns summarizing the task, rephrasing the requirements, or explaining the API to yourself. Keep internal deliberation short and move to code quickly.
+- If you are blocked, make one focused fix and continue. Do not repeatedly switch strategies without first trying the simplest implementation path.
+- Aim to produce a first executable version quickly, then iterate only if needed for correctness.
+- If you are unsure about a substrate detail, make the simplest reasonable assumption, implement it, and validate it instead of continuing to read more files.
+- If you have not edited `output_model_new.py` yet, you are not allowed to read more internal implementation files.
+- If validation fails, fix the specific failure. Do not restart the round with a new long reading phase.
+- Work quickly and aim to finish writing within 20 minutes.
+- If you cannot finish within 30 minutes, treat the round as a failure and stop.
+
+Stop when you have implemented the current round's prompt requirements, obtained a correctness-passing result for this round, and there is no obvious remaining performance bottleneck directly targeted by this round's optimization goal. Do not continue iterating on unrelated micro-optimizations.
+
+codex
+Reading the starting kernel first, then I’ll grab the nearest local MFMA example under `/workspace/substrate` and move straight into editing `output_model_new.py`.
+exec
+/bin/bash -lc "sed -n '1,260p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/candidate_input.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+import torch
+import torch.nn as nn
+import substrate
+import substrate.language as S
+
+SQRT_2 = 1.4142135623730951
+
+BATCH_SIZE = 1024
+IN_FEATURES = 8192
+OUT_FEATURES = 8192
+MULTIPLIER = 2.0
+NEGATIVE_SLOPE = 0.1
+
+BLOCK_M = 64
+BLOCK_N = 64
+BLOCK_K = 16
+PIPE_STAGES = 2
+WAVE_SIZE = 64
+NUM_WAVES = 4
+THREADS = WAVE_SIZE * NUM_WAVES
+K_TILES = IN_FEATURES // BLOCK_K
+
+X_NUMEL = BATCH_SIZE * IN_FEATURES
+W_NUMEL = IN_FEATURES * OUT_FEATURES
+Y_NUMEL = BATCH_SIZE * OUT_FEATURES
+X_RANGE_BYTES = X_NUMEL * 2
+W_RANGE_BYTES = W_NUMEL * 2
+Y_RANGE_BYTES = Y_NUMEL * 2
+
+
+def _launch():
+    return ((OUT_FEATURES // BLOCK_N, BATCH_SIZE // BLOCK_M, 1), (THREADS, 1, 1))
+
+
+@substrate.jit
+def fused_kernel(
+    X: S.Tensor((BATCH_SIZE, IN_FEATURES), S.bf16),
+    W: S.Tensor((IN_FEATURES, OUT_FEATURES), S.bf16),
+    BIAS: S.Tensor((OUT_FEATURES,), S.bf16),
+    Y: S.Tensor((BATCH_SIZE, OUT_FEATURES), S.bf16),
+):
+    tid = S.thread_id(0)
+    lane = tid % WAVE_SIZE
+    warp_id = tid // WAVE_SIZE
+    warp_row = warp_id // 2
+    warp_col = warp_id % 2
+
+    block_col = S.block_id(0)
+    block_row = S.block_id(1)
+    tile_row_base = block_row * BLOCK_M
+    tile_col_base = block_col * BLOCK_N
+
+    zero = S.convert(0, S.i32)
+    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(X_RANGE_BYTES, S.i32))
+    w_rsrc = S.amdgpu.make_rsrc(W, S.convert(W_RANGE_BYTES, S.i32))
+
+    a_shared = S.make_shared((PIPE_STAGES * 2 * WAVE_SIZE, 8), S.bf16)
+    b_shared = S.make_shared((PIPE_STAGES * 2 * WAVE_SIZE, 8), S.bf16)
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    if tid < 128:
+        a_group = tid // WAVE_SIZE
+        a_local = tid % WAVE_SIZE
+        a_row = a_local // 2
+        a_chunk = a_local % 2
+        x_row = tile_row_base + a_group * 32 + a_row
+        x_col = a_chunk * 8
+        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+        a_lane_lo = a_row
+        a_lane_hi = a_row + 32
+        a_dst = a_chunk * 4
+        a_base = a_group * WAVE_SIZE
+        for kk in S.range(4):
+            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+    else:
+        b_loader = tid - 128
+        b_group = b_loader // WAVE_SIZE
+        b_local = b_loader % WAVE_SIZE
+        b_k = b_local // 4
+        b_chunk = b_local % 4
+        w_row = b_k
+        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+        b_lane_base = b_chunk * 8
+        b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+        b_lane_offset = 0 if (b_k % 8) < 4 else 32
+        b_base = b_group * WAVE_SIZE
+        for cc in S.range(4):
+            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
+
+    S.syncthreads()
+
+    for k_tile in S.range(0, K_TILES, 2):
+        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
+
+        next_tile = k_tile + 1
+        if next_tile < K_TILES:
+            if tid < 128:
+                a_group = tid // WAVE_SIZE
+                a_local = tid % WAVE_SIZE
+                a_row = a_local // 2
+                a_chunk = a_local % 2
+                x_row = tile_row_base + a_group * 32 + a_row
+                x_col = next_tile * BLOCK_K + a_chunk * 8
+                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+                a_lane_lo = a_row
+                a_lane_hi = a_row + 32
+                a_dst = a_chunk * 4
+                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+                for kk in S.range(4):
+                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+            else:
+                b_loader = tid - 128
+                b_group = b_loader // WAVE_SIZE
+                b_local = b_loader % WAVE_SIZE
+                b_k = b_local // 4
+                b_chunk = b_local % 4
+                w_row = next_tile * BLOCK_K + b_k
+                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+                b_lane_base = b_chunk * 8
+                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+                for cc in S.range(4):
+                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+
+        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+        S.syncthreads()
+
+        if next_tile < K_TILES:
+            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+
+            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
+
+            future_tile = k_tile + 2
+            if future_tile < K_TILES:
+                if tid < 128:
+                    a_group = tid // WAVE_SIZE
+                    a_local = tid % WAVE_SIZE
+                    a_row = a_local // 2
+                    a_chunk = a_local % 2
+                    x_row = tile_row_base + a_group * 32 + a_row
+                    x_col = future_tile * BLOCK_K + a_chunk * 8
+                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+                    a_lane_lo = a_row
+                    a_lane_hi = a_row + 32
+                    a_dst = a_chunk * 4
+                    a_base = a_group * WAVE_SIZE
+                    for kk in S.range(4):
+                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+                else:
+                    b_loader = tid - 128
+                    b_group = b_loader // WAVE_SIZE
+                    b_local = b_loader % WAVE_SIZE
+                    b_k = b_local // 4
+                    b_chunk = b_local % 4
+                    w_row = future_tile * BLOCK_K + b_k
+                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+                    b_lane_base = b_chunk * 8
+                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+                    b_base = b_group * WAVE_SIZE
+                    for cc in S.range(4):
+                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
+
+            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+            S.syncthreads()
+
+    out_col = tile_col_base + warp_col * 32 + (lane % 32)
+    bias_val = S.convert(BIAS[out_col], S.f32)
+    warp_row_base = tile_row_base + warp_row * 32
+
+    for acc_idx in S.range(16):
+        out_row = warp_row_base + 8 * (acc_idx // 4) + 4 * (lane // 32) + (acc_idx % 4)
+        val = (c_lane[acc_idx] + bias_val) * S.convert(MULTIPLIER, S.f32)
+        if val < S.convert(0.0, S.f32):
+            val = val * S.convert(NEGATIVE_SLOPE, S.f32)
+        Y[out_row, out_col] = S.convert(val, S.bf16)
+
+
+class ModelNew(nn.Module):
+    def __init__(self, in_features, out_features, multiplier, negative_slope):
+        super().__init__()
+        self.gemm = nn.Linear(in_features, out_features)
+        self.multiplier = multiplier
+        self.leaky_relu = nn.LeakyReLU(negative_slope)
+        self._cached_weight_ptr = None
+        self._cached_bias_ptr = None
+        self._cached_weight_device = None
+        self._cached_weight_t = None
+        self._cached_bias = None
+
+    def _refresh_static_tensors(self, device):
+        weight = self.gemm.weight.detach()
+        bias = self.gemm.bias.detach()
+        weight_ptr = weight.untyped_storage().data_ptr()
+        bias_ptr = bias.untyped_storage().data_ptr()
+        if (
+            self._cached_weight_t is None
+            or self._cached_bias is None
+            or self._cached_weight_ptr != weight_ptr
+            or self._cached_bias_ptr != bias_ptr
+            or self._cached_weight_device != device
+        ):
+            self._cached_weight_t = weight.t().to(device=device, dtype=torch.bfloat16).contiguous()
+            self._cached_bias = bias.to(device=device, dtype=torch.bfloat16).contiguous()
+            self._cached_weight_ptr = weight_ptr
+            self._cached_bias_ptr = bias_ptr
+            self._cached_weight_device = device
+
+    def forward(self, x):
+        if (
+            tuple(x.shape) != (BATCH_SIZE, IN_FEATURES)
+            or x.dtype != torch.bfloat16
+            or self.multiplier != MULTIPLIER
+            or self.leaky_relu.negative_slope != NEGATIVE_SLOPE
+        ):
+            raise RuntimeError("This fused kernel only supports the benchmark input shape and dtype.")
+
+        x_contig = x.contiguous()
+        self._refresh_static_tensors(x.device)
+        y = torch.empty((BATCH_SIZE, OUT_FEATURES), device=x.device, dtype=torch.bfloat16)
+        fused_kernel[_launch](x_contig, self._cached_weight_t, self._cached_bias, y)
+        return y
+
+exec
+/bin/bash -lc "rg -n --glob '*.py' 'raw_buffer_load_x4|mfma|MFMA|amdgpu.raw_buffer_load_x4' /workspace/substrate | head -n 40" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:12:def gemm_mfma_16x16x16(
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:24:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:25:    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:31:def gemm_mfma_32x32x8_bf16(
+/workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py:43:    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:32:    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+/workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py:48:    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+
+codex
+I have the starting kernel. Next I’m checking the local MFMA example and one buffer-op example to confirm the `range` usage, then I’ll patch `output_model_new.py` directly.
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/examples/gemm/amdgpu/test_gemm_mfma.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def gemm_mfma_16x16x16(
+    A: S.Tensor((64, 4), S.u32),
+    B: S.Tensor((64, 4), S.u32),
+    C: S.Tensor((64, 4), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((4,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((2, 4, 1), S.f16))
+    m_b = S.view(B[lane], S.Tensor((2, 4, 1), S.f16))
+
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[0], m_b[0], c_lane)
+    c_lane = S.amdgpu.mfma_16x16x16_f16_f32(m_a[1], m_b[1], c_lane)
+
+    C[lane] = c_lane
+
+
+@substrate.jit
+def gemm_mfma_32x32x8_bf16(
+    A: S.Tensor((64, 2), S.u32),
+    B: S.Tensor((64, 2), S.u32),
+    C: S.Tensor((64, 16), S.f32),
+):
+    lane = S.thread_id(0)
+
+    c_lane = S.full((16,), 0.0, S.f32)
+
+    m_a = S.view(A[lane], S.Tensor((1, 4, 1), S.bf16))
+    m_b = S.view(B[lane], S.Tensor((1, 4, 1), S.bf16))
+
+    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(m_a[0], m_b[0], c_lane)
+
+    C[lane] = c_lane
+
+
+exec
+/bin/bash -lc "sed -n '1,220p' /workspace/substrate/test/primitives/memory/test_amdgpu_buffer_ops.py" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+#!/usr/bin/env python3
+import unittest
+
+import torch
+
+import substrate
+import substrate.language as S
+import _substrate_bindings as _C
+from substrate.compiler.code_generator import (
+    _build_import_module,
+    _collect_jit_dependencies,
+    _get_function_def,
+)
+from substrate.testing import has_rocm
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_roundtrip(
+    src: S.Tensor((7,), S.i32),
+    dst: S.Tensor((7,), S.i32),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+    dst_rsrc = S.amdgpu.make_rsrc(dst, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    offset_x2 = S.convert(4, S.i32)
+    offset_x4 = S.convert(12, S.i32)
+
+    value_x1 = S.amdgpu.raw_buffer_load_x1(src_rsrc, zero, zero, 0)
+    value_x2 = S.amdgpu.raw_buffer_load_x2(src_rsrc, zero, offset_x2, 0)
+    value_x4 = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, offset_x4, 0)
+
+    S.amdgpu.raw_buffer_store_x1(value_x1, dst_rsrc, zero, zero, 0)
+    S.amdgpu.raw_buffer_store_x2(value_x2, dst_rsrc, zero, offset_x2, 0)
+    S.amdgpu.raw_buffer_store_x4(value_x4, dst_rsrc, zero, offset_x4, 0)
+
+
+@substrate.jit
+def kernel_amdgpu_raw_buffer_bf16_view(
+    src: S.Tensor((8,), S.bf16),
+    dst: S.Tensor((8,), S.bf16),
+    range_bytes: S.i32,
+):
+    src_rsrc = S.amdgpu.make_rsrc(src, range_bytes)
+
+    zero = S.convert(0, S.i32)
+    packed = S.amdgpu.raw_buffer_load_x4(src_rsrc, zero, zero, 0)
+    frag = S.view(packed, S.Tensor((2, 4, 1), S.bf16))
+
+    for i in S.range(2):
+        for j in S.range(4):
+            dst[i * 4 + j] = frag[i, j, 0]
+
+
+def generate_mlir(jit_fn) -> str:
+    jit_deps = _collect_jit_dependencies(jit_fn)
+    import_module = _build_import_module([jit_fn, *jit_deps])
+
+    generator = _C.MLIRGenerator()
+    generator.generate_from_python_ast(import_module)
+
+    for dep in jit_deps:
+        dep_func = _get_function_def(dep.parse())
+        generator.visit_function_def(dep_func, "[]", "jit")
+
+    kernel_func = _get_function_def(jit_fn.parse())
+    generator.visit_function_def(kernel_func, "[]", "kernel")
+    return generator.get_mlir()
+
+
+@unittest.skipUnless(
+    has_rocm(),
+    "Requires ROCm/HIP with an AMD GPU.",
+)
+class TestAMDGPUBufferOps(unittest.TestCase):
+    def test_raw_buffer_roundtrip(self):
+        src = torch.arange(7, dtype=torch.int32, device="cuda") * 17 - 9
+        dst = torch.full((7,), -1, dtype=torch.int32, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_roundtrip[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+    def test_make_rsrc_generates_pointer_and_range(self):
+        mlir = generate_mlir(kernel_amdgpu_raw_buffer_roundtrip)
+
+        self.assertIn(
+            "substrate.memref.extract_aligned_pointer_as_index",
+            mlir,
+        )
+        self.assertGreaterEqual(mlir.count("vector.insert %arg2"), 2, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_load"), 3, mlir)
+        self.assertEqual(mlir.count("substrate.gpu.amdgpu_raw_buffer_store"), 3, mlir)
+
+    def test_raw_buffer_bf16_view_extract(self):
+        src = torch.randn((8,), dtype=torch.bfloat16, device="cuda")
+        dst = torch.zeros((8,), dtype=torch.bfloat16, device="cuda")
+        range_bytes = src.numel() * src.element_size()
+
+        kernel_amdgpu_raw_buffer_bf16_view[lambda: ((1, 1, 1), (1, 1, 1))](
+            src, dst, range_bytes
+        )
+
+        self.assertTrue(
+            torch.equal(dst.cpu(), src.cpu()),
+            f"Expected: {src.tolist()}, Actual: {dst.tolist()}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+codex
+I have enough context. I’m writing `output_model_new.py` now with the loop branches removed and the X-side loads switched to row-range resources so speculative prefetches zero out safely.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..5ee2fd5e586c2a547e41e2a2098e746a1b83df45
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -26,6 +26,7 @@
+ X_RANGE_BYTES = X_NUMEL * 2
+ W_RANGE_BYTES = W_NUMEL * 2
+ Y_RANGE_BYTES = Y_NUMEL * 2
++X_ROW_RANGE_BYTES = IN_FEATURES * 2
+ 
+ 
+ def _launch():
+@@ -51,7 +52,7 @@
+     tile_col_base = block_col * BLOCK_N
+ 
+     zero = S.convert(0, S.i32)
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(X_RANGE_BYTES, S.i32))
++    x_row_range = S.convert(X_ROW_RANGE_BYTES, S.i32)
+     w_rsrc = S.amdgpu.make_rsrc(W, S.convert(W_RANGE_BYTES, S.i32))
+ 
+     a_shared = S.make_shared((PIPE_STAGES * 2 * WAVE_SIZE, 8), S.bf16)
+@@ -64,131 +65,147 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((a_chunk * 8) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_offset_1 = S.convert((BLOCK_K + a_chunk * 8) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
+ 
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++
+     S.syncthreads()
+ 
+     for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_0 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_1 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..5ee2fd5e586c2a547e41e2a2098e746a1b83df45
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -26,6 +26,7 @@
+ X_RANGE_BYTES = X_NUMEL * 2
+ W_RANGE_BYTES = W_NUMEL * 2
+ Y_RANGE_BYTES = Y_NUMEL * 2
++X_ROW_RANGE_BYTES = IN_FEATURES * 2
+ 
+ 
+ def _launch():
+@@ -51,7 +52,7 @@
+     tile_col_base = block_col * BLOCK_N
+ 
+     zero = S.convert(0, S.i32)
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(X_RANGE_BYTES, S.i32))
++    x_row_range = S.convert(X_ROW_RANGE_BYTES, S.i32)
+     w_rsrc = S.amdgpu.make_rsrc(W, S.convert(W_RANGE_BYTES, S.i32))
+ 
+     a_shared = S.make_shared((PIPE_STAGES * 2 * WAVE_SIZE, 8), S.bf16)
+@@ -64,131 +65,147 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((a_chunk * 8) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_offset_1 = S.convert((BLOCK_K + a_chunk * 8) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
+ 
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++
+     S.syncthreads()
+ 
+     for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_0 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_1 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+codex
+The first pass is in place. I’m running the required round-local evaluation now and will make only targeted fixes if it fails.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..5ee2fd5e586c2a547e41e2a2098e746a1b83df45
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -26,6 +26,7 @@
+ X_RANGE_BYTES = X_NUMEL * 2
+ W_RANGE_BYTES = W_NUMEL * 2
+ Y_RANGE_BYTES = Y_NUMEL * 2
++X_ROW_RANGE_BYTES = IN_FEATURES * 2
+ 
+ 
+ def _launch():
+@@ -51,7 +52,7 @@
+     tile_col_base = block_col * BLOCK_N
+ 
+     zero = S.convert(0, S.i32)
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(X_RANGE_BYTES, S.i32))
++    x_row_range = S.convert(X_ROW_RANGE_BYTES, S.i32)
+     w_rsrc = S.amdgpu.make_rsrc(W, S.convert(W_RANGE_BYTES, S.i32))
+ 
+     a_shared = S.make_shared((PIPE_STAGES * 2 * WAVE_SIZE, 8), S.bf16)
+@@ -64,131 +65,147 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((a_chunk * 8) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_offset_1 = S.convert((BLOCK_K + a_chunk * 8) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
+ 
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++
+     S.syncthreads()
+ 
+     for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_0 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_1 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+ exited 1 in 3573ms:
+/tmp/tmpsfwwfkd5.py:68:22: error: Unimplemented: 'make_rsrc() expects a tensor argument'
+   68 |         x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+      |                      ^
+/tmp/tmpsfwwfkd5.py:68:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   68 |         x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+      |         ^
+/tmp/tmpsfwwfkd5.py:74:20: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+   74 |         a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_0, 0)
+      |                    ^
+/tmp/tmpsfwwfkd5.py:74:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   74 |         a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_0, 0)
+      |         ^
+/tmp/tmpsfwwfkd5.py:75:20: error: Unimplemented: 'Failed to generate memref argument for view()'
+   75 |         a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+      |                    ^
+/tmp/tmpsfwwfkd5.py:75:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   75 |         a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+      |         ^
+/tmp/tmpsfwwfkd5.py:78:13: error: Unimplemented: 'Failed to generate expression for assignment'
+   78 |             a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+      |             ^
+/tmp/tmpsfwwfkd5.py:79:13: error: Unimplemented: 'Failed to generate expression for assignment'
+   79 |             a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+      |             ^
+/tmp/tmpsfwwfkd5.py:82:20: error: Unimplemented: 'Failed to generate operands for raw_buffer_load_x'
+   82 |         a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_1, 0)
+      |                    ^
+/tmp/tmpsfwwfkd5.py:82:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   82 |         a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_1, 0)
+      |         ^
+/tmp/tmpsfwwfkd5.py:83:20: error: Unimplemented: 'Failed to generate memref argument for view()'
+   83 |         a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+      |                    ^
+/tmp/tmpsfwwfkd5.py:83:9: error: Unimplemented: 'Failed to generate expression for assignment'
+   83 |         a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+      |         ^
+/tmp/tmpsfwwfkd5.py:86:13: error: Unimplemented: 'Failed to generate expression for assignment'
+   86 |             a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+      |             ^
+/tmp/tmpsfwwfkd5.py:87:13: error: Unimplemented: 'Failed to generate expression for assignment'
+   87 |             a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+      |             ^
+/tmp/tmpsfwwfkd5.py:132:26: error: Unimplemented: 'make_rsrc() expects a tensor argument'
+  132 |             x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+      |                          ^
+/tmp/tmpsfwwfkd5.py:132:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  132 |             x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)/tmp/tmpsfwwfkd5.py:134:22:      a_.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
+      |                      ^
+/tmp/tmpsfwwfkd5.py:134:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  134 |             a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
+      |             ^
+/tmp/tmpsfwwfkd5.py:135:22: error: Unimplemented: 'Failed to generate memref argument for view()'
+  135 |             a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
+      |                      ^
+/tmp/tmpsfwwfkd5.py:135:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  135 |             a_frag view(.Ten.bf16) error: Unimplemented: 'Failed to generate expression for assignment'
+  141 |            base + , a_dst + kk] =142 |      ared[a_base + a_lane_hi+ kk] = a_frag[1, k|                 ^
+ |             rsrc(Xange)
+:13: error: Unimplemented: 'Failed to generate expression for assignment' |         rc = S.amdgpu.make_rsrc(X[ge)
+      |             ^
+ |             a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
+      |                      ^
+/tmp/tmpsfwwfkd5.py:179:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  179 |             a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
+      |             ^
+/tmp/tmpsfwwfkd5.py:180:22: error: Unimplemented: 'Failed to generate memref argument for view()'
+  180 |             a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
+      |                      ^
+/tmp/tmpsfwwfkd5.py:180:13: error: Unimplemented: 'Failed to generate expression for assignment'
+  180 |             a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
+      |             ^
+/tmp/tmpsfwwfkd5.py:186:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  186 |                 a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
+      |                 ^
+/tmp/tmpsfwwfkd5.py:187:17: error: Unimplemented: 'Failed to generate expression for assignment'
+  187 |                 a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
+      |                 ^
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. 
+Error: VisitFunctionDef failed due to compiler diagnostics
+
+codex
+The evaluation is still running. I’m polling for the concrete result rather than changing anything speculatively.
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..5ee2fd5e586c2a547e41e2a2098e746a1b83df45
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -26,6 +26,7 @@
+ X_RANGE_BYTES = X_NUMEL * 2
+ W_RANGE_BYTES = W_NUMEL * 2
+ Y_RANGE_BYTES = Y_NUMEL * 2
++X_ROW_RANGE_BYTES = IN_FEATURES * 2
+ 
+ 
+ def _launch():
+@@ -51,7 +52,7 @@
+     tile_col_base = block_col * BLOCK_N
+ 
+     zero = S.convert(0, S.i32)
+-    x_rsrc = S.amdgpu.make_rsrc(X, S.convert(X_RANGE_BYTES, S.i32))
++    x_row_range = S.convert(X_ROW_RANGE_BYTES, S.i32)
+     w_rsrc = S.amdgpu.make_rsrc(W, S.convert(W_RANGE_BYTES, S.i32))
+ 
+     a_shared = S.make_shared((PIPE_STAGES * 2 * WAVE_SIZE, 8), S.bf16)
+@@ -64,131 +65,147 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((a_chunk * 8) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_offset_1 = S.convert((BLOCK_K + a_chunk * 8) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
+ 
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++
+     S.syncthreads()
+ 
+     for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_0 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_row_rsrc = S.amdgpu.make_rsrc(X[x_row], x_row_range)
++            x_offset = S.convert((future_tile_1 * BLOCK_K + a_chunk * 8) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_row_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+codex
+`make_rsrc` does not accept row slices here, so I’m switching to the simpler valid path: peel the loop to remove the in-loop branches without relying on unsupported per-row resources.
+apply patch
+patch: completed
+/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..05d9218b0b0d011e4c87069ca6a144668dc00d20
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -64,131 +64,158 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_col_0 = a_chunk * 8
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((x_row * IN_FEATURES + x_col_0) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_col_1 = BLOCK_K + a_chunk * 8
++        x_offset_1 = S.convert((x_row * IN_FEATURES + x_col_1) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+ 
+     S.syncthreads()
+ 
+-    for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    for k_tile in S.range(0, K_TILES - 2, 2):
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_0 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_1 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
++
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
++
++    a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++    a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..05d9218b0b0d011e4c87069ca6a144668dc00d20
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -64,131 +64,158 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_col_0 = a_chunk * 8
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((x_row * IN_FEATURES + x_col_0) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_col_1 = BLOCK_K + a_chunk * 8
++        x_offset_1 = S.convert((x_row * IN_FEATURES + x_col_1) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+ 
+     S.syncthreads()
+ 
+-    for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    for k_tile in S.range(0, K_TILES - 2, 2):
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_0 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_1 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
++
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
++
++    a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++    a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+codex
+The unsupported slice-based resource path is out. I’m rerunning the exact evaluation command on the peeled-loop version now.
+exec
+/bin/bash -lc '/opt/venv/bin/python /workspace/kernel_benchmark/kb_eval_pipeline/harness/tools/run_kernelbench_case.py --input-file /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/case.txt --output /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/debug_eval.jsonl --device 0 --num-correct-trials 1 --timing-method cudagraph --phase agent_debug_eval --measure-performance' in /workspace/kernel_benchmark
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..05d9218b0b0d011e4c87069ca6a144668dc00d20
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -64,131 +64,158 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_col_0 = a_chunk * 8
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((x_row * IN_FEATURES + x_col_0) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_col_1 = BLOCK_K + a_chunk * 8
++        x_offset_1 = S.convert((x_row * IN_FEATURES + x_col_1) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+ 
+     S.syncthreads()
+ 
+-    for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    for k_tile in S.range(0, K_TILES - 2, 2):
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_0 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_1 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
++
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
++
++    a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++    a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..05d9218b0b0d011e4c87069ca6a144668dc00d20
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -64,131 +64,158 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_col_0 = a_chunk * 8
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((x_row * IN_FEATURES + x_col_0) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_col_1 = BLOCK_K + a_chunk * 8
++        x_offset_1 = S.convert((x_row * IN_FEATURES + x_col_1) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+ 
+     S.syncthreads()
+ 
+-    for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    for k_tile in S.range(0, K_TILES - 2, 2):
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_0 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_1 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
++
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
++
++    a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++    a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+ succeeded in 5729ms:
+Substrate: Using AmdgpuDriver (available: ['AmdgpuDriver', 'NvidiaDriver'])
+[Profiling] Using timing method: cudagraph
+[Profiling] Using timing method: cudagraph
+
+codex
+The harness returned success. I’m reading the round-local debug output once to confirm the correctness status and capture the measured result.
+exec
+/bin/bash -lc "sed -n '1,120p' /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/debug_eval.jsonl" in /workspace/kernel_benchmark
+ succeeded in 0ms:
+{"event_type": "harness_run", "run_started_at": 1782380044.820854, "run_ended_at": 1782380048.492141, "run_wall_time_s": 3.671286, "case_dir": "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3", "config": {"seed": 42, "device": 0, "num_correct_trials": 1, "num_perf_trials": 10, "measure_performance": true, "timing_method": "cudagraph", "verbose": false}, "backend": "substrate", "precision": "bf16", "gpu_arch": ["gfx942"], "compiled": true, "correctness": true, "runtime_us": 7.8, "ref_runtime_us": 0.264, "metadata": {"hardware": "AMD Instinct MI300X", "device": "0", "correctness_trials": "(1 / 1)", "timings_s": {"events": [{"timestamp": 1782380044.82095, "event_type": "eval_start"}, {"timestamp": 1782380044.821013, "event_type": "load_reference_model_start"}, {"timestamp": 1782380045.167208, "event_type": "load_reference_model_end", "duration_s": 0.346182}, {"timestamp": 1782380045.167251, "event_type": "custom_model_import_start"}, {"timestamp": 1782380045.222618, "event_type": "custom_model_import_end", "duration_s": 0.055356}, {"timestamp": 1782380045.222624, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782380045.837783, "event_type": "instantiate_and_to_device_end", "duration_s": 0.615142}, {"timestamp": 1782380045.837792, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782380046.763203, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 0.9254}, {"timestamp": 1782380046.763209, "event_type": "correctness_check_start"}, {"timestamp": 1782380048.040297, "event_type": "correctness_check_end", "duration_s": 1.277071}, {"timestamp": 1782380048.082184, "event_type": "candidate_profile_start"}, {"timestamp": 1782380048.419615, "event_type": "candidate_profile_end", "duration_s": 0.337402}, {"timestamp": 1782380048.461832, "event_type": "reference_profile_start"}, {"timestamp": 1782380048.491199, "event_type": "reference_profile_end", "duration_s": 0.02935}, {"timestamp": 1782380048.491364, "event_type": "cleanup_start"}, {"timestamp": 1782380048.492012, "event_type": "cleanup_end", "duration_s": 0.000641}, {"timestamp": 1782380048.492016, "event_type": "eval_end", "duration_s": 3.671065}], "load_reference_model_s": 0.346182, "custom_model_import_compile_s": 0.055356, "instantiate_and_to_device_s": 0.615142, "first_candidate_invocation_s": 0.9254, "correctness_check_s": 1.277071, "candidate_profile_wall_time_s": 0.337402, "reference_profile_wall_time_s": 0.02935, "cleanup_s": 0.000641, "eval_total_wall_time_s": 3.671065, "compile_time_s": 0.980756, "profile_time_s": 0.366752}}, "runtime_stats": {"mean": 7.8, "std": 0.0, "min": 7.8, "max": 7.8, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "ref_runtime_stats": {"mean": 0.264, "std": 0.0, "min": 0.264, "max": 0.264, "num_trials": 32, "timing_mode": "cudagraph", "requested_num_trials": 10}, "timings_s": {"events": [{"timestamp": 1782380044.82095, "event_type": "eval_start"}, {"timestamp": 1782380044.821013, "event_type": "load_reference_model_start"}, {"timestamp": 1782380045.167208, "event_type": "load_reference_model_end", "duration_s": 0.346182}, {"timestamp": 1782380045.167251, "event_type": "custom_model_import_start"}, {"timestamp": 1782380045.222618, "event_type": "custom_model_import_end", "duration_s": 0.055356}, {"timestamp": 1782380045.222624, "event_type": "instantiate_and_to_device_start"}, {"timestamp": 1782380045.837783, "event_type": "instantiate_and_to_device_end", "duration_s": 0.615142}, {"timestamp": 1782380045.837792, "event_type": "first_candidate_invocation_start", "trial": 0}, {"timestamp": 1782380046.763203, "event_type": "first_candidate_invocation_end", "trial": 0, "duration_s": 0.9254}, {"timestamp": 1782380046.763209, "event_type": "correctness_check_start"}, {"timestamp": 1782380048.040297, "event_type": "correctness_check_end", "duration_s": 1.277071}, {"timestamp": 1782380048.082184, "event_type": "candidate_profile_start"}, {"timestamp": 1782380048.419615, "event_type": "candidate_profile_end", "duration_s": 0.337402}, {"timestamp": 1782380048.461832, "event_type": "reference_profile_start"}, {"timestamp": 1782380048.491199, "event_type": "reference_profile_end", "duration_s": 0.02935}, {"timestamp": 1782380048.491364, "event_type": "cleanup_start"}, {"timestamp": 1782380048.492012, "event_type": "cleanup_end", "duration_s": 0.000641}, {"timestamp": 1782380048.492016, "event_type": "eval_end", "duration_s": 3.671065}], "load_reference_model_s": 0.346182, "custom_model_import_compile_s": 0.055356, "instantiate_and_to_device_s": 0.615142, "first_candidate_invocation_s": 0.9254, "correctness_check_s": 1.277071, "candidate_profile_wall_time_s": 0.337402, "reference_profile_wall_time_s": 0.02935, "cleanup_s": 0.000641, "eval_total_wall_time_s": 3.671065, "compile_time_s": 0.980756, "profile_time_s": 0.366752}, "run_index": 0, "phase": "agent_debug_eval"}
+
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..05d9218b0b0d011e4c87069ca6a144668dc00d20
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -64,131 +64,158 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_col_0 = a_chunk * 8
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((x_row * IN_FEATURES + x_col_0) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_col_1 = BLOCK_K + a_chunk * 8
++        x_offset_1 = S.convert((x_row * IN_FEATURES + x_col_1) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+ 
+     S.syncthreads()
+ 
+-    for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    for k_tile in S.range(0, K_TILES - 2, 2):
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_0 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_1 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
++
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
++
++    a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++    a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+codex
+Implemented the optimized kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py) only. I left `candidate_input.py` unchanged.
+
+The update removes the K-loop control branches by peeling the loop around the double-buffered pipeline, keeping the MFMA/LDS/global-load overlap structure and the unroll-by-2 schedule intact. Validation passed with `correctness: true` on the required harness command, and the recorded candidate runtime was `7.8 us` in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/debug_eval.jsonl).
+diff --git a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+index dea9fac0cb5a380ad41ec3ac6219036d85ad7260..05d9218b0b0d011e4c87069ca6a144668dc00d20
+--- a/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
++++ b/kb_eval_pipeline/runs/kb2/p12/optimization_rounds/round3/output_model_new.py
+@@ -64,131 +64,158 @@
+         a_row = a_local // 2
+         a_chunk = a_local % 2
+         x_row = tile_row_base + a_group * 32 + a_row
+-        x_col = a_chunk * 8
+-        x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        x_col_0 = a_chunk * 8
+         a_lane_lo = a_row
+         a_lane_hi = a_row + 32
+         a_dst = a_chunk * 4
+-        a_base = a_group * WAVE_SIZE
++
++        x_offset_0 = S.convert((x_row * IN_FEATURES + x_col_0) * 2, S.i32)
++        a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_0, 0)
++        a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        a_base_0 = a_group * WAVE_SIZE
+         for kk in S.range(4):
+-            a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-            a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++            a_shared[a_base_0 + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
++            a_shared[a_base_0 + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
++
++        x_col_1 = BLOCK_K + a_chunk * 8
++        x_offset_1 = S.convert((x_row * IN_FEATURES + x_col_1) * 2, S.i32)
++        a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset_1, 0)
++        a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        a_base_1 = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++        for kk in S.range(4):
++            a_shared[a_base_1 + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
++            a_shared[a_base_1 + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+     else:
+         b_loader = tid - 128
+         b_group = b_loader // WAVE_SIZE
+         b_local = b_loader % WAVE_SIZE
+         b_k = b_local // 4
+         b_chunk = b_local % 4
+-        w_row = b_k
+-        w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-        w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_col = tile_col_base + b_group * 32 + b_chunk * 8
+         b_lane_base = b_chunk * 8
+         b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+         b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-        b_base = b_group * WAVE_SIZE
++
++        w_row_0 = b_k
++        w_offset_0 = S.convert((w_row_0 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_0, 0)
++        b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
++        b_base_0 = b_group * WAVE_SIZE
++        for cc in S.range(4):
++            b_shared[b_base_0 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
++            b_shared[b_base_0 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++
++        w_row_1 = BLOCK_K + b_k
++        w_offset_1 = S.convert((w_row_1 * OUT_FEATURES + b_col) * 2, S.i32)
++        b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset_1, 0)
++        b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
++        b_base_1 = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+         for cc in S.range(4):
+-            b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-            b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++            b_shared[b_base_1 + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
++            b_shared[b_base_1 + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
+ 
+     S.syncthreads()
+ 
+-    for k_tile in S.range(0, K_TILES, 2):
+-        a_frag = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-        b_frag = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    for k_tile in S.range(0, K_TILES - 2, 2):
++        a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
+ 
+-        next_tile = k_tile + 1
+-        if next_tile < K_TILES:
+-            if tid < 128:
+-                a_group = tid // WAVE_SIZE
+-                a_local = tid % WAVE_SIZE
+-                a_row = a_local // 2
+-                a_chunk = a_local % 2
+-                x_row = tile_row_base + a_group * 32 + a_row
+-                x_col = next_tile * BLOCK_K + a_chunk * 8
+-                x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                a_pack_1 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                a_frag_1 = S.view(a_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                a_lane_lo = a_row
+-                a_lane_hi = a_row + 32
+-                a_dst = a_chunk * 4
+-                a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
+-                for kk in S.range(4):
+-                    a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_1[0, kk, 0]
+-                    a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_1[1, kk, 0]
+-            else:
+-                b_loader = tid - 128
+-                b_group = b_loader // WAVE_SIZE
+-                b_local = b_loader % WAVE_SIZE
+-                b_k = b_local // 4
+-                b_chunk = b_local % 4
+-                w_row = next_tile * BLOCK_K + b_k
+-                w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                b_pack_1 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                b_frag_1 = S.view(b_pack_1, S.Tensor((2, 4, 1), S.bf16))
+-                b_lane_base = b_chunk * 8
+-                b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
+-                for cc in S.range(4):
+-                    b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_1[0, cc, 0]
+-                    b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_1[1, cc, 0]
++        future_tile_0 = k_tile + 2
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_0 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_0 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
+ 
+-        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+         S.syncthreads()
+ 
+-        if next_tile < K_TILES:
+-            a_frag = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+-            b_frag = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++        b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[0], b_frag[0], c_lane)
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
+ 
+-            future_tile = k_tile + 2
+-            if future_tile < K_TILES:
+-                if tid < 128:
+-                    a_group = tid // WAVE_SIZE
+-                    a_local = tid % WAVE_SIZE
+-                    a_row = a_local // 2
+-                    a_chunk = a_local % 2
+-                    x_row = tile_row_base + a_group * 32 + a_row
+-                    x_col = future_tile * BLOCK_K + a_chunk * 8
+-                    x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
+-                    a_pack_0 = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
+-                    a_frag_0 = S.view(a_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    a_lane_lo = a_row
+-                    a_lane_hi = a_row + 32
+-                    a_dst = a_chunk * 4
+-                    a_base = a_group * WAVE_SIZE
+-                    for kk in S.range(4):
+-                        a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag_0[0, kk, 0]
+-                        a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag_0[1, kk, 0]
+-                else:
+-                    b_loader = tid - 128
+-                    b_group = b_loader // WAVE_SIZE
+-                    b_local = b_loader % WAVE_SIZE
+-                    b_k = b_local // 4
+-                    b_chunk = b_local % 4
+-                    w_row = future_tile * BLOCK_K + b_k
+-                    w_col = tile_col_base + b_group * 32 + b_chunk * 8
+-                    w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
+-                    b_pack_0 = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
+-                    b_frag_0 = S.view(b_pack_0, S.Tensor((2, 4, 1), S.bf16))
+-                    b_lane_base = b_chunk * 8
+-                    b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
+-                    b_lane_offset = 0 if (b_k % 8) < 4 else 32
+-                    b_base = b_group * WAVE_SIZE
+-                    for cc in S.range(4):
+-                        b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag_0[0, cc, 0]
+-                        b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag_0[1, cc, 0]
++        future_tile_1 = k_tile + 3
++        if tid < 128:
++            a_group = tid // WAVE_SIZE
++            a_local = tid % WAVE_SIZE
++            a_row = a_local // 2
++            a_chunk = a_local % 2
++            x_row = tile_row_base + a_group * 32 + a_row
++            x_col = future_tile_1 * BLOCK_K + a_chunk * 8
++            x_offset = S.convert((x_row * IN_FEATURES + x_col) * 2, S.i32)
++            a_pack = S.amdgpu.raw_buffer_load_x4(x_rsrc, zero, x_offset, 0)
++            a_frag = S.view(a_pack, S.Tensor((2, 4, 1), S.bf16))
++            a_lane_lo = a_row
++            a_lane_hi = a_row + 32
++            a_dst = a_chunk * 4
++            a_base = WAVE_SIZE * 2 + a_group * WAVE_SIZE
++            for kk in S.range(4):
++                a_shared[a_base + a_lane_lo, a_dst + kk] = a_frag[0, kk, 0]
++                a_shared[a_base + a_lane_hi, a_dst + kk] = a_frag[1, kk, 0]
++        else:
++            b_loader = tid - 128
++            b_group = b_loader // WAVE_SIZE
++            b_local = b_loader % WAVE_SIZE
++            b_k = b_local // 4
++            b_chunk = b_local % 4
++            w_row = future_tile_1 * BLOCK_K + b_k
++            w_col = tile_col_base + b_group * 32 + b_chunk * 8
++            w_offset = S.convert((w_row * OUT_FEATURES + w_col) * 2, S.i32)
++            b_pack = S.amdgpu.raw_buffer_load_x4(w_rsrc, zero, w_offset, 0)
++            b_frag = S.view(b_pack, S.Tensor((2, 4, 1), S.bf16))
++            b_lane_base = b_chunk * 8
++            b_dst = (b_k % 4) if b_k < 8 else 4 + (b_k % 4)
++            b_lane_offset = 0 if (b_k % 8) < 4 else 32
++            b_base = WAVE_SIZE * 2 + b_group * WAVE_SIZE
++            for cc in S.range(4):
++                b_shared[b_base + b_lane_base + cc + b_lane_offset, b_dst] = b_frag[0, cc, 0]
++                b_shared[b_base + b_lane_base + 4 + cc + b_lane_offset, b_dst] = b_frag[1, cc, 0]
++
++        c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
++        S.syncthreads()
++
++    a_frag_0 = S.view(a_shared[warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_0 = S.view(b_shared[warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[0], b_frag_0[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_0[1], b_frag_0[1], c_lane)
+ 
+-            c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag[1], b_frag[1], c_lane)
+-            S.syncthreads()
++    a_frag_1 = S.view(a_shared[WAVE_SIZE * 2 + warp_row * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    b_frag_1 = S.view(b_shared[WAVE_SIZE * 2 + warp_col * WAVE_SIZE + lane], S.Tensor((2, 4, 1), S.bf16))
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[0], b_frag_1[0], c_lane)
++    c_lane = S.amdgpu.mfma_32x32x8_bf16_f32(a_frag_1[1], b_frag_1[1], c_lane)
+ 
+     out_col = tile_col_base + warp_col * 32 + (lane % 32)
+     bias_val = S.convert(BIAS[out_col], S.f32)
+
+tokens used
+81,941

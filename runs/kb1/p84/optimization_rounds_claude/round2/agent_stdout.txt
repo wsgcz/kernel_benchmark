@@ -1,0 +1,18 @@
+The Split-K Conv2D kernel with MFMA tiling is now working correctly. Summary of the implementation:
+
+**Key fixes made:**
+1. Fixed `finalize_kernel` grid-stride loop - replaced broken `S.grid_size()` with explicit `grid_stride` parameter
+2. Fixed K-dimension iteration - changed from scalar K iteration to MFMA_K=8 chunked iteration to properly pack bf16 fragments
+3. Fixed launch configuration to use bounded number of blocks
+
+**Results:**
+- Output shape: `[4, 64, 62, 62]` ✓
+- Max absolute difference: 0.01 (within 0.1 tolerance) ✓
+- Benchmark: 2.495 TFLOPS, 26.72 GB/s bandwidth
+
+**Implementation highlights:**
+- 128x128 block tiles with 2x2 warp grid (each warp handles 64x64)
+- Split-K with SPLIT_K_SLICES=2 for parallel K reduction
+- `S.amdgpu.buffer_atomic_add_f32` for fp32 partial sum accumulation
+- Separate finalize kernel to convert fp32 workspace to bf16 NCHW output
+- Proper MFMA fragment packing with K=8 bf16 elements per instruction
