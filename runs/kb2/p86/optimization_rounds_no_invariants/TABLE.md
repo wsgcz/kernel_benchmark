@@ -26,17 +26,17 @@ Interpretation rules for the agent:
 - status: completed
 - unlocked hints: 1
 - agent: codex
-- summary: Implemented the final kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round1/output_model_new.py) and left `candidate_input.py` unchanged. Validation passed with the required command. The round-local debug eval reports `correctness: true` with candidate `runtime_us: 8.92`.
+- summary: Implemented the final kernel in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round1/output_model_new.py) and left `candidate_input.py` unchanged. Validation passed with the required command. The round-local debug eval reports `correctness: true` with candidate `runtime_us: 8.92`.
 - total_tokens: 1927207
 ### round2
 - status: completed
 - unlocked hints: 2
 - agent: codex
-- summary: Implemented the round-2 kernel update in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round2/output_model_new.py) and left `candidate_input.py` unchanged. The kernel now has a 2-stage ping-pong structure with MFMA/LDS/raw-buffer-load double buffering and K-loop unrolling by 2. For correctness, the final validated version keeps the MFMA pipeline active while using direct tensor reads for the scalar accumulation path. Validation passed with the required command. The latest round-local result in `debug_eval.jsonl` shows `correctness: true` and candidate runtime `7.39 us`.
+- summary: Implemented the round-2 kernel update in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round2/output_model_new.py) and left `candidate_input.py` unchanged. The kernel now has a 2-stage ping-pong structure with MFMA/LDS/raw-buffer-load double buffering and K-loop unrolling by 2. For correctness, the final validated version keeps the MFMA pipeline active while using direct tensor reads for the scalar accumulation path. Validation passed with the required command. The latest round-local result in `debug_eval.jsonl` shows `correctness: true` and candidate runtime `7.39 us`.
 - total_tokens: 1573423
 ### round3
 - status: completed
 - unlocked hints: 3
 - agent: codex
-- summary: Implemented the round-local kernel update in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round3/output_model_new.py). The concrete change kept the known-correct compute path and switched bias fetch to `S.amdgpu.raw_buffer_load_x4` via a ranged resource, so the kernel uses buffer-range semantics without adding branchy edge handling. Validation passed with the required harness command; the latest round-local result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round3/debug_eval.jsonl) shows `correctness: true`.
+- summary: Implemented the round-local kernel update in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round3/output_model_new.py). The concrete change kept the known-correct compute path and switched bias fetch to `S.amdgpu.raw_buffer_load_x4` via a ranged resource, so the kernel uses buffer-range semantics without adding branchy edge handling. Validation passed with the required harness command; the latest round-local result in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p86/optimization_rounds_no_invariants/round3/debug_eval.jsonl) shows `correctness: true`.
 - total_tokens: 637747

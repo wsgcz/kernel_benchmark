@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 
 # Import the optimized kernel
-sys.path.insert(0, "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p56/optimization_rounds_no_invariants_claude/round2")
+sys.path.insert(0, "/workspace/kb_eval_pipeline/runs/kb1/p56/optimization_rounds_no_invariants_claude/round2")
 from output_model_new import ModelNew
 
 

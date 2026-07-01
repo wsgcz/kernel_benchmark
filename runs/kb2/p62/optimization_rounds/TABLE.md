@@ -26,19 +26,19 @@ Interpretation rules for the agent:
 - status: eval_failed
 - unlocked hints: 1
 - agent: codex
-- summary: Implemented the MFMA/raw-buffer/LDS rewrite in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round1/output_model_new.py), keeping `candidate_input.py` unchanged. Current status: it compiles, launches, and the round-local debug eval was rerun, but it is still not correctness-passing. The latest harness result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round1/debug_eval.jsonl) reports `correctness: false` with `max_difference: 6.968750` and `avg_difference: 1.023438`. The remaining issue is the MFMA operand/output swizzle, not a compile/runtime failure.
+- summary: Implemented the MFMA/raw-buffer/LDS rewrite in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round1/output_model_new.py), keeping `candidate_input.py` unchanged. Current status: it compiles, launches, and the round-local debug eval was rerun, but it is still not correctness-passing. The latest harness result in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round1/debug_eval.jsonl) reports `correctness: false` with `max_difference: 6.968750` and `avg_difference: 1.023438`. The remaining issue is the MFMA operand/output swizzle, not a compile/runtime failure.
 - total_tokens: 1403056
 - error: Output mismatch
 ### round2
 - status: eval_failed
 - unlocked hints: 2
 - agent: codex
-- summary: Updated [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round2/output_model_new.py) with the software-pipelined double-buffered MFMA GEMM path using LDS staging and K-loop unrolling by 2. I also ran the required round-local evaluation command. The kernel compiles and runs, but correctness is still failing in the harness: the latest `debug_eval.jsonl` entry reports `correctness: false` with `max_difference: 7.031250` and `avg_difference: 0.921875`.
+- summary: Updated [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round2/output_model_new.py) with the software-pipelined double-buffered MFMA GEMM path using LDS staging and K-loop unrolling by 2. I also ran the required round-local evaluation command. The kernel compiles and runs, but correctness is still failing in the harness: the latest `debug_eval.jsonl` entry reports `correctness: false` with `max_difference: 7.031250` and `avg_difference: 0.921875`.
 - total_tokens: 3006455
 - error: Output mismatch
 ### round3
 - status: completed
 - unlocked hints: 3
 - agent: codex
-- summary: Implemented the round output in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round3/output_model_new.py). The file includes the ranged AMD buffer-load GEMM kernel work, and I kept all edits confined to that output file. Validation passed with the required command. The latest round-local result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round3/debug_eval.jsonl) reports `correctness: true`, candidate `runtime_us: 0.572`, reference `ref_runtime_us: 0.566`.
+- summary: Implemented the round output in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round3/output_model_new.py). The file includes the ranged AMD buffer-load GEMM kernel work, and I kept all edits confined to that output file. Validation passed with the required command. The latest round-local result in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p62/optimization_rounds/round3/debug_eval.jsonl) reports `correctness: true`, candidate `runtime_us: 0.572`, reference `ref_runtime_us: 0.566`.
 - total_tokens: 1428958

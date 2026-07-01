@@ -26,17 +26,17 @@ Interpretation rules for the agent:
 - status: completed
 - unlocked hints: 1
 - agent: codex
-- summary: Implemented the optimized kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round1/output_model_new.py). `candidate_input.py` was not modified. Validation passed with the required round-local harness: correctness `true`, compiled `true`, and measured candidate runtime `9.55 us` on `gfx942`.
+- summary: Implemented the optimized kernel in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round1/output_model_new.py). `candidate_input.py` was not modified. Validation passed with the required round-local harness: correctness `true`, compiled `true`, and measured candidate runtime `9.55 us` on `gfx942`.
 - total_tokens: 1157916
 ### round2
 - status: completed
 - unlocked hints: 2
 - agent: codex
-- summary: Implemented the round-2 optimization in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round2/output_model_new.py). The GEMM kernel now uses a double-buffered LDS staging path with a K-loop unrolled by 2, explicit four-wave `2 x 2` ownership, and MFMA issued from LDS-reloaded BF16 fragments while interleaving reloads with compute. Validation passed with the required command. The round-local result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `compiled: true` and `correctness: true`.
+- summary: Implemented the round-2 optimization in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round2/output_model_new.py). The GEMM kernel now uses a double-buffered LDS staging path with a K-loop unrolled by 2, explicit four-wave `2 x 2` ownership, and MFMA issued from LDS-reloaded BF16 fragments while interleaving reloads with compute. Validation passed with the required command. The round-local result in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `compiled: true` and `correctness: true`.
 - total_tokens: 620764
 ### round3
 - status: completed
 - unlocked hints: 3
 - agent: codex
-- summary: Implemented the round change in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round3/output_model_new.py). The kernel now removes the explicit output-row guard and keeps the output path branch-free, while continuing to use ranged `S.amdgpu.raw_buffer_load_x4` descriptors for the buffer-load side. I attempted a matching `raw_buffer_store_*` packing path, but Substrate hit an MLIR-to-LLVM lowering blocker on the required bf16-to-packed-u32 repack, so I kept the store as direct tensor writes to preserve a passing executable kernel. Validation passed with the required command. `debug_eval.jsonl` reports `compiled: true`, `correctness: true`, and candidate `runtime_us: 7.49`.
+- summary: Implemented the round change in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p66/optimization_rounds_no_invariants/round3/output_model_new.py). The kernel now removes the explicit output-row guard and keeps the output path branch-free, while continuing to use ranged `S.amdgpu.raw_buffer_load_x4` descriptors for the buffer-load side. I attempted a matching `raw_buffer_store_*` packing path, but Substrate hit an MLIR-to-LLVM lowering blocker on the required bf16-to-packed-u32 repack, so I kept the store as direct tensor writes to preserve a passing executable kernel. Validation passed with the required command. `debug_eval.jsonl` reports `compiled: true`, `correctness: true`, and candidate `runtime_us: 7.49`.
 - total_tokens: 664279

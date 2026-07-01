@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 
 # Import the optimized kernel
-sys.path.insert(0, "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p55/optimization_rounds_no_invariants_claude/round1")
+sys.path.insert(0, "/workspace/kb_eval_pipeline/runs/kb1/p55/optimization_rounds_no_invariants_claude/round1")
 from output_model_new import ModelNew, mfma_16x16x16_f16_kernel, WARP_SIZE
 
 

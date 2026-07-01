@@ -31,7 +31,7 @@ CODEX_SESSION_ID_RE = re.compile(r"session id:\s*([0-9a-f-]+)", re.IGNORECASE)
 
 ALT_PROMPT1_NO_INVARIANTS = """## 1: Prompt 1
 
-Optimize the substrate kernel in /workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p09/round0/output_model_new.py
+Optimize the substrate kernel in /workspace/kb_eval_pipeline/runs/kb2/p09/round0/output_model_new.py
 
 Use MFMA instructions `S.amdgpu.mfma_32x32x8_bf16_f32` to do matrix multiplications and loads the data from global memory using vectorized loads S.amdgpu.raw_buffer_load_x4. The MFMA instruction computes 32x32x8 matmul cooperatively in a wave. Build larger tiles by issuing multiple MFMA instructions across K and output subtiles.
 
@@ -907,7 +907,7 @@ def render_round_prompt(
         + prompt_text
     )
     prompt_text = prompt_text.replace(
-        "/workspace/kernel_benchmark/kb_eval_pipeline",
+        "/workspace/kb_eval_pipeline",
         str(KB_EVAL_PIPELINE_ROOT.resolve()),
     )
     prompt_text = re.sub(

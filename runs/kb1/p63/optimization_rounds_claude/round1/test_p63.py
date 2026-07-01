@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sys
-sys.path.insert(0, "/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb1/p63/optimization_rounds_claude/round1")
+sys.path.insert(0, "/workspace/kb_eval_pipeline/runs/kb1/p63/optimization_rounds_claude/round1")
 
 import torch
 import torch.nn.functional as F

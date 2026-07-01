@@ -26,19 +26,19 @@ Interpretation rules for the agent:
 - status: eval_failed
 - unlocked hints: 1
 - agent: codex
-- summary: Implemented an MFMA-based substrate kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round1/output_model_new.py) and validated it with the required round command. It does not pass correctness yet. The latest round-local eval in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round1/debug_eval.jsonl) reports `correctness: false` with `avg_difference: 0.828125` and `max_difference: 6.343750`. The remaining issue is the MFMA/LDS operand or accumulator layout, not compilation.
+- summary: Implemented an MFMA-based substrate kernel in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round1/output_model_new.py) and validated it with the required round command. It does not pass correctness yet. The latest round-local eval in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round1/debug_eval.jsonl) reports `correctness: false` with `avg_difference: 0.828125` and `max_difference: 6.343750`. The remaining issue is the MFMA/LDS operand or accumulator layout, not compilation.
 - total_tokens: 1213556
 - error: Output mismatch
 ### round2
 - status: eval_failed
 - unlocked hints: 2
 - agent: codex
-- summary: Implemented the kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round2/output_model_new.py). I validated with the required command. The current version still does not pass correctness: the latest harness run in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `correctness: false` with `max_difference: 6.40625` and `avg_difference: 0.824219`.
+- summary: Implemented the kernel in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round2/output_model_new.py). I validated with the required command. The current version still does not pass correctness: the latest harness run in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `correctness: false` with `max_difference: 6.40625` and `avg_difference: 0.824219`.
 - total_tokens: 2360027
 - error: Output mismatch
 ### round3
 - status: completed
 - unlocked hints: 3
 - agent: codex
-- summary: Wrote the final file to [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round3/output_model_new.py). Validation passed with the required harness: `correctness: true` in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round3/debug_eval.jsonl). The recorded candidate runtime was `0.669 us` versus `0.442 us` for the reference.
+- summary: Wrote the final file to [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round3/output_model_new.py). Validation passed with the required harness: `correctness: true` in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p33/optimization_rounds_no_invariants/round3/debug_eval.jsonl). The recorded candidate runtime was `0.669 us` versus `0.442 us` for the reference.
 - total_tokens: 799589

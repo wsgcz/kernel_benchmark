@@ -26,17 +26,17 @@ Interpretation rules for the agent:
 - status: completed
 - unlocked hints: 1
 - agent: codex
-- summary: Implemented the optimized submission in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round1/output_model_new.py). Validation passed with the required command. The round-local eval in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round1/debug_eval.jsonl) reports `compiled: true`, `correctness: true`, and candidate runtime `0.316 us` versus reference `0.338 us`.
+- summary: Implemented the optimized submission in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round1/output_model_new.py). Validation passed with the required command. The round-local eval in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round1/debug_eval.jsonl) reports `compiled: true`, `correctness: true`, and candidate runtime `0.316 us` versus reference `0.338 us`.
 - total_tokens: 1146916
 ### round2
 - status: completed
 - unlocked hints: 2
 - agent: codex
-- summary: Implemented the round-2 kernel in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round2/output_model_new.py). The kernel now uses a four-wave `2 x 2` warp grid, stages A/B through LDS with `raw_buffer_load_x4`, and runs a double-buffered MFMA pipeline with the K path unrolled by 2 across four `16`-wide K tiles. Validation passed with the required command. The harness result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `compiled: true` and `correctness: true`.
+- summary: Implemented the round-2 kernel in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round2/output_model_new.py). The kernel now uses a four-wave `2 x 2` warp grid, stages A/B through LDS with `raw_buffer_load_x4`, and runs a double-buffered MFMA pipeline with the K path unrolled by 2 across four `16`-wide K tiles. Validation passed with the required command. The harness result in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round2/debug_eval.jsonl) reports `compiled: true` and `correctness: true`.
 - total_tokens: 451959
 ### round3
 - status: completed
 - unlocked hints: 3
 - agent: codex
-- summary: Implemented the round-3 change in [output_model_new.py](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round3/output_model_new.py). The kernel now makes the A/B buffer ranges explicit in bytes and keeps the branch-free `raw_buffer_load_x4` path aligned with range-based OOB handling. Validation passed with the required command. The round-local result in [debug_eval.jsonl](/workspace/kernel_benchmark/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round3/debug_eval.jsonl) shows `compiled: true` and `correctness: true`.
+- summary: Implemented the round-3 change in [output_model_new.py](/workspace/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round3/output_model_new.py). The kernel now makes the A/B buffer ranges explicit in bytes and keeps the branch-free `raw_buffer_load_x4` path aligned with range-based OOB handling. Validation passed with the required command. The round-local result in [debug_eval.jsonl](/workspace/kb_eval_pipeline/runs/kb2/p84/optimization_rounds_no_invariants/round3/debug_eval.jsonl) shows `compiled: true` and `correctness: true`.
 - total_tokens: 333196
